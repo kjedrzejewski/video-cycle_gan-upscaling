@@ -15,7 +15,7 @@ from keras.optimizers import Adam
 
 class VGG_LOSS(object):
 
-    def __init__(self, image_shape):
+    def __init__(self, image_shape, orig_rate = 0.1):
         
         self.image_shape = image_shape
 
@@ -30,7 +30,7 @@ class VGG_LOSS(object):
         model = Model(inputs=vgg19.input, outputs=vgg19.get_layer('block5_conv4').output)
         model.trainable = False
     
-        return K.mean(K.square(model(y_true) - model(y_pred)))
+        return K.mean(K.square(model(y_true) - model(y_pred))) + self.orig_rate * K.mean(K.square(y_true - y_pred))
     
 def get_optimizer():
  

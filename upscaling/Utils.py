@@ -33,29 +33,36 @@ def SubpixelConv2D(input_shape, scale=4):
         return tf.depth_to_space(x, scale)
         
     return Lambda(subpixel, output_shape=subpixel_shape)
-    
+
+
+def indentity_func(x, **kwargs):
+    return x
+
 # Takes list of images and provide HR images in form of numpy array
 def hr_images(images):
     images_hr = array(images)
+    # conversion between PIL and array swaps height and width
+    images_hr = np.swapaxes(images_hr, 1, 2)
     return images_hr
 
 # Takes list of images and provide LR images in form of numpy array
-def lr_images(images_real , downscale):
-    
+def lr_images(images_real , downscale, prog_func = indentity_func):
     images = []
-    for img in  tqdm(range(len(images_real)), desc = 'Converting to low-res: '):
-        images.append(
-            np.array(
+    for img in  prog_func(range(len(images_real)), desc = 'Converting to low-res: '):
+        img_lr = np.array(
                 Image.fromarray(images_real[img]).resize(
                     [
-                        round(images_real[img].shape[0]/downscale),
-                        round(images_real[img].shape[1]/downscale)
+                        # conversion between PIL and array swaps height and width
+                        round(images_real[img].shape[1]/downscale),
+                        round(images_real[img].shape[0]/downscale)
                     ],
                     resample=Image.BICUBIC
                 )
             )
-        )
+        images.append(img_lr)
     images_lr = array(images)
+    # conversion between PIL and array swaps height and width
+    images_lr = np.swapaxes(images_lr, 1, 2)
     return images_lr
     
 def normalize(input_data):
@@ -66,7 +73,7 @@ def denormalize(input_data):
     input_data = (input_data + 1) * 127.5
     return input_data.astype(np.uint8)
    
- 
+
 def load_path(path):
     directories = []
     if os.path.isdir(path):
@@ -77,17 +84,15 @@ def load_path(path):
             directories.append(os.path.join(path,elem))
     return directories
     
-def load_data_from_dirs(dirs, ext, limit = np.inf):
+def load_data_from_dirs(dirs, ext, limit = np.inf, prog_func = indentity_func):
     files = []
-    file_names = []
     count = 0
     for d in dirs:
-        for f in tqdm(os.listdir(d), desc = 'Loading files:'): 
+        for f in prog_func(os.listdir(d), desc = 'Loading files:'): 
             if f.endswith(ext):
                 image = data.imread(os.path.join(d,f))
                 if len(image.shape) > 2:
                     files.append(image)
-                    file_names.append(os.path.join(d,f))
                 count = count + 1
             if count >= limit:
                 break
@@ -98,22 +103,11 @@ def load_data(directory, ext):
     files = load_data_from_dirs(load_path(directory), ext)
     return files
     
-def load_training_data(directory, ext, number_of_images = 1000, train_test_ratio = 0.8, downscale_factor = 4):
+def load_training_data(directory, ext, number_of_images = 1000, train_test_ratio = 0.8, downscale_factor = 4, prog_func = indentity_func):
 
     number_of_train_images = int(number_of_images * train_test_ratio)
     
-    files = load_data_from_dirs(load_path(directory), ext, limit = number_of_images)
-    
-    if len(files) < number_of_images:
-        print("Number of image files are less then you specified")
-        print("Please reduce number of images to %d" % len(files))
-        sys.exit()
-        
-    test_array = array(files)
-    if len(test_array.shape) < 3:
-        print("Images are of not same shape")
-        print("Please provide same shape images")
-        sys.exit()
+    files = load_data_from_dirs(load_path(directory), ext, limit = number_of_images, prog_func = prog_func)
     
     x_train = files[:number_of_train_images]
     x_test = files[number_of_train_images:number_of_images]
@@ -121,13 +115,13 @@ def load_training_data(directory, ext, number_of_images = 1000, train_test_ratio
     x_train_hr = hr_images(x_train)
     x_train_hr = normalize(x_train_hr)
     
-    x_train_lr = lr_images(x_train, downscale_factor)
+    x_train_lr = lr_images(x_train, downscale_factor, prog_func = prog_func)
     x_train_lr = normalize(x_train_lr)
     
     x_test_hr = hr_images(x_test)
     x_test_hr = normalize(x_test_hr)
     
-    x_test_lr = lr_images(x_test, downscale_factor)
+    x_test_lr = lr_images(x_test, downscale_factor, prog_func = prog_func)
     x_test_lr = normalize(x_test_lr)
     
     return x_train_lr, x_train_hr, x_test_lr, x_test_hr
