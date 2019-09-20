@@ -104,3 +104,4 @@ venv.bak/
 .mypy_cache/
 
 images
+upscaling/trained_model

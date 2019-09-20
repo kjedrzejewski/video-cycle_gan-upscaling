@@ -18,6 +18,7 @@ class VGG_LOSS(object):
     def __init__(self, image_shape, orig_rate = 0.1):
         
         self.image_shape = image_shape
+        self.orig_rate = orig_rate
 
     # computes VGG loss or content loss
     def vgg_loss(self, y_true, y_pred):
@@ -29,7 +30,9 @@ class VGG_LOSS(object):
             l.trainable = False
         model = Model(inputs=vgg19.input, outputs=vgg19.get_layer('block5_conv4').output)
         model.trainable = False
-    
+        
+        print(str(orig_rate) + " " + image_shape)
+        
         return K.mean(K.square(model(y_true) - model(y_pred))) + self.orig_rate * K.mean(K.square(y_true - y_pred))
     
 def get_optimizer():
