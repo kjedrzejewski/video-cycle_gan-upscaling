@@ -1,156 +1,172 @@
-from Network import Generator, Discriminator
-import Utils
-from keras.applications.vgg19 import VGG19
+from upscaler.data import load_train_test_data
+from upscaler.data import save_images_orig, save_images_predicted
+from upscaler.model import make_upscaler_skip_con, make_upscaler_orig
+from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
+from upscaler.model import compile_training_model
 
-import keras.backend as K
-from keras.models import Model
-from keras.layers import Input, Lambda, Add, Concatenate
-from keras.optimizers import Adam
-from keras.layers.core import Activation
-from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose
-from keras.layers.advanced_activations import LeakyReLU, PReLU
-from keras.layers.normalization import BatchNormalization
-from keras.models import load_model
-
-from skimage import data, io
-from PIL import Image
-from matplotlib import pyplot as plt
-from tqdm import tqdm, tqdm_notebook
 import numpy as np
+from tqdm import tqdm
+import os
+import sys
+import argparse
 
 # how many times the original image is scaled down
 downscale_factor = 4
 output_image_shape = (1920,1080,3)
 input_image_shape = (480,270,3)
 
-
-def res_block_gen(model, kernal_size, filters, strides):
+if __name__== "__main__":
     
-    gen = model
+    ###########################################################
+    ## Preparing call arguments parsing
+    ###########################################################
     
-    model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
-    model = BatchNormalization(momentum = 0.5)(model)
-    # Using Parametric ReLU
-    model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2])(model)
-    model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
-    model = BatchNormalization(momentum = 0.5)(model)
-        
-    model = Add()([gen, model])
+    parser = argparse.ArgumentParser()
     
-    return model
-
-
-def up_sampling_block(model, kernal_size, filters, strides):
+    parser.add_argument('-i', '--image_input_dir', action='store', dest='image_input_dir', default='ukiyo-e_fullhd', help='Path to load images from (subdir of "../images/")')
     
-    model = Conv2DTranspose(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
-    model = LeakyReLU(alpha = 0.2)(model)
-    #model = PReLU(shared_axes=[1,2,3])(model)
+    parser.add_argument('-s', '--subdir', action='store', dest='subdir', default='ukiyo', help='Subdir to put generated images, trained models, etc to')
     
-    return model
-
-
-class VGG_MSE_LOSS(object):
-
-    def __init__(self, image_shape, orig_rate = 0.1):
-        
-        self.image_shape = image_shape
-        self.orig_rate = orig_rate
-
-    # computes VGG loss or content loss
-    def loss(self, y_true, y_pred):
+    parser.add_argument('-p', '--output_prefix', action='store', dest='output_prefix', default='auto', help='Prefix to put in names of generated files (and sometimes also a subdir). Default value \'auto\' means generate it automatically')
     
-        vgg19 = VGG19(include_top=False, weights='imagenet', input_shape=self.image_shape)
-        vgg19.trainable = False
-        # Make trainable as False
-        for l in vgg19.layers:
-            l.trainable = False
-        model = Model(inputs=vgg19.input, outputs=vgg19.get_layer('block5_conv4').output)
-        model.trainable = False
-        
-        return K.mean(K.square(model(y_true) - model(y_pred))) + self.orig_rate * K.mean(K.square(y_true - y_pred))
-
-
-def make_generator(input_shape):
-        
-    gen_input = Input(shape = input_image_shape)
-
-    model = Conv2D(filters = 64, kernel_size = 9, strides = 1, padding = "same")(gen_input)
-    model = PReLU(shared_axes=[1,2])(model)
-
-    gen_model = model
-
-    for index in range(16):
-        model = res_block_gen(model, 3, 64, 1)
-
-    model = Conv2D(filters = 64, kernel_size = 3, strides = 1, padding = "same")(model)
-    model = BatchNormalization(momentum = 0.5)(model)
-    model = Add()([gen_model, model])
-
-    for index in range(2):
-        model = up_sampling_block(model, 3, 192, 2)
+    parser.add_argument('-ic', '--image_count', action='store', dest='image_count', default='1000', help='Number of images to be used (and split into training and test sets)', type=int)
     
-    # resized_input = K.resize_images(gen_input, 4, 4, "channels_last", "bilinear")
-    resized_input = (Lambda(lambda x: K.resize_images(x, 4, 4, "channels_last", "bilinear")))(gen_input)
-    model = Concatenate(axis = 3)([resized_input, model])
+    parser.add_argument('-tr', '--train_test_ratio', action='store', dest='train_test_ratio', default='0.95', help='Ratio of splitting images into the test and train sets', type=float)
+    
+    parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con'], help='Model to be used')
+    
+    parser.add_argument('-l', '--loss', action='store', dest='loss', default='vgg-mse', choices=['vgg-only','vgg-mae','vgg-mse'], help='Loss function to be used for the training')
+    
+    parser.add_argument('-lw', '--non_vgg_loss_weight', action='store', dest='non_vgg_loss_weight', default='1.0', help='Weight of the loss other than VGG (if there is any)', type=float)
+    
+    parser.add_argument('-msf', '--model_save_freq', action='store', dest='model_save_freq', default='500', help='How frequently a model should be saved? (number of batches)', type=int)
+    
+    parser.add_argument('-bs', '--batch_size', action='store', dest='batch_size', default='1', help='Number of examples to be put in the batch', type=int)
+    
+    parser.add_argument('-nb', '--number_of_batches', action='store', dest='number_of_batches', default='40001', help='Number batches to be run', type=int)
+    
+    values = parser.parse_args()
+    
+    
+    ###########################################################
+    ## Reading call arguments and setting up paths
+    ###########################################################
+    
+    script_dirname = os.path.dirname(sys.argv[0])
+    if script_dirname == '':
+        script_dirname = '.'
+    input_dir = script_dirname + '/../images/' + values.image_input_dir
+    model_save_dir = script_dirname + '/' + 'trained_model'
+    images_dir = script_dirname + '/' + 'example_images'
+    subdir = values.subdir
+    #model_prefix = "orig_vgg-mse"
+    model_prefix = values.output_prefix
+    if model_prefix == 'auto':
+        model_prefix = values.model + "_" + values.loss
+        print("Prefix generated automatically: '" + model_prefix + "'")
+    
+    number_of_images = values.image_count
+    train_test_ratio = values.train_test_ratio
 
-    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)
-    model = Activation('tanh')(model)
+    # where the examples of images will be saved
+    image_path = images_dir + '/' + subdir + '/' + model_prefix
+    if not os.path.exists(image_path):
+        os.makedirs(image_path)
+    print("Generated images will be saved to: '" + image_path + "'")
 
-    generator_model = Model(inputs = gen_input, outputs = model)
-
-    return generator_model
-
-
-input_dir = '../images/photo_fullhd'
-model_save_dir = 'trained_model'
-number_of_images = 1000
-train_test_ratio = 0.8
-
-epochs = 5
-batch_count = 33001
-batch_size = 1
-
-
-x_train_lr, x_train_hr, x_test_lr, x_test_hr = Utils.load_training_data(input_dir, '.jpg', number_of_images, train_test_ratio, downscale_factor, prog_func=tqdm)
+    # where models and loss values will be saved
+    model_loss_path = model_save_dir + '/' + subdir + '/' + model_prefix
+    if not os.path.exists(model_loss_path):
+        os.makedirs(model_loss_path)
+    print("Loss values and trained models will be saved to: '" + model_loss_path + "'")
+    loss_file_name = model_loss_path + '/' + 'losses_upscaler_' + model_prefix + '.txt'
+    best_loss_file_name = model_loss_path + '/' + 'losses_upscaler_' + model_prefix + '_best.txt'
+    model_file_name_tpl = model_loss_path + '/' + 'model_upscaler_' + model_prefix + '_%06db.h5'
+    model_file_name_best = model_loss_path + '/' + 'model_upscaler_' + model_prefix + '_best.h5'
 
 
-generator = make_generator(input_image_shape)
-input_layer = Input(shape=input_image_shape)
-upscaled_layer = generator(input_layer)
-upscale_model = Model(inputs=input_layer, outputs=upscaled_layer)
-
-vgg_loss = VGG_MSE_LOSS(output_image_shape, 0.01).loss
-upscale_model.compile(loss=vgg_loss, optimizer=Adam())
-
-agg_loss = None
-loss_update_rate = 0.01
-
-loss_file = open(model_save_dir + '/losses.txt' , 'w+')
-loss_file.write('batch\tloss\tagg_loss\n')
-loss_file.close()
-
-for b in tqdm(range(batch_count), desc = 'Training batches'):
-
-    rand_nums = np.random.randint(0, x_train_hr.shape[0], size=batch_size)
-    #rand_nums = [2]
-
-    image_batch_hr = x_train_hr[rand_nums]
-    image_batch_lr = x_train_lr[rand_nums]
-    loss = upscale_model.train_on_batch(image_batch_lr, image_batch_hr)
-
-    if(agg_loss == None):
-        agg_loss = loss
-    else:
-        agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
-
-    loss_file = open(model_save_dir + '/losses.txt' , 'a')
-    loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
+    ###########################################################
+    ## Loading the data
+    ###########################################################
+    
+    x_train_lr, x_train_hr, x_test_lr, x_test_hr = load_train_test_data(
+        input_dir, '.jpg',
+        number_of_images,
+        train_test_ratio,
+        input_image_shape,
+        prog_func=tqdm
+    )
+    
+    
+    ###########################################################
+    ## Setting up the model for training
+    ###########################################################
+    
+    # create the model instance
+    if values.model == 'orig':
+        upscaler = make_upscaler_orig(input_image_shape)
+    elif values.model == 'skip-con':
+        upscaler = make_upscaler_skip_con(input_image_shape)
+    
+    # create the loss
+    if values.loss == 'vgg-only':
+        loss = VGG_LOSS(output_image_shape).loss
+    elif values.loss == 'vgg-mae':
+        loss = VGG_MAE_LOSS(output_image_shape, values.non_vgg_loss_weight).loss
+    elif values.loss == 'vgg-mse':
+        loss = VGG_MSE_LOSS(output_image_shape, values.non_vgg_loss_weight).loss
+    
+    # setting up the model for training
+    upscaler_training_model = compile_training_model(upscaler, loss)
+    
+    
+    ###########################################################
+    ## Model training
+    ###########################################################
+    
+    agg_loss = 0.0
+    loss_update_rate = 0.01
+    
+    # loss logs initialisations
+    loss_file = open(loss_file_name, 'w+')
+    loss_file.write('batch\tloss\tagg_loss\n')
     loss_file.close()
 
-    #if(b % 10 == 0):
-    #    print ('Batch: %d,' % b, ' Agg loss %f' % agg_loss)
+    loss_file = open(best_loss_file_name, 'w+')
+    loss_file.write('batch\tloss\tagg_loss\n')
+    loss_file.close()
     
-    if(b % 500 == 0):
-        upscale_model.compile(loss="mean_squared_error", optimizer=Adam()) # so it'll be easy to load the model
-        upscale_model.save('trained_model/upscale_model_skip_con_%06db.h5' % b)
-        upscale_model.compile(loss=vgg_loss, optimizer=Adam())
+    # saving lowres and highres examples
+    save_images_orig(x_train_lr, x_train_hr, 0, 10, image_path, model_prefix + '_train')
+    save_images_orig(x_test_lr, x_test_hr, 0, 10, image_path, model_prefix + '_test')
+
+    best_loss = np.inf
+    
+    # actual training loop
+    for b in tqdm(range(values.number_of_batches), desc = 'Batch'):
+
+        rand_nums = np.random.randint(0, x_train_hr.shape[0], size=values.batch_size)
+
+        image_batch_hr = x_train_hr[rand_nums]
+        image_batch_lr = x_train_lr[rand_nums]
+        loss = upscaler_training_model.train_on_batch(image_batch_lr, image_batch_hr)
+
+        agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
+
+        loss_file = open(loss_file_name, 'a')
+        loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
+        loss_file.close()
+
+        if b >= values.model_save_freq and agg_loss < best_loss:
+            best_loss = agg_loss
+
+            upscaler.save(model_file_name_best)
+
+            loss_file = open(best_loss_file_name, 'a')
+            loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
+            loss_file.close()
+
+        if(b % values.model_save_freq == 0):
+            upscaler.save(model_file_name_tpl % b)
+            save_images_predicted(x_train_lr, upscaler, 0, 10, image_path, model_prefix + '_train', b)
+            save_images_predicted(x_test_lr, upscaler, 0, 10, image_path, model_prefix + '_test', b)
