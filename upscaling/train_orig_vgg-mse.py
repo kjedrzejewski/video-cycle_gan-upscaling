@@ -1,8 +1,8 @@
 from Network import Generator, Discriminator
 import Utils
-from keras.applications.vgg19 import VGG19
 
 import keras.backend as K
+from keras.applications.vgg19 import VGG19
 from keras.models import Model
 from keras.layers import Input, Lambda, Add, Concatenate
 from keras.optimizers import Adam
