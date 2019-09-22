@@ -103,6 +103,11 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+.DS_Store
+*/.DS_Store
+**/.DS_Store
+
 images
 upscaling/trained_model
 upscaling/example_images
+
