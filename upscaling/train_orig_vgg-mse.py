@@ -123,7 +123,7 @@ def save_images_orig(lowres, highres, idx_start, idx_stop, prefix, quality = 100
         rescale_save_array_as_image(ex, images_dir + '/' + subdir + '/' + model_prefix + '/' + prefix + "_im%04d_lowres.jpg" % idx, quality)
 
         ex = highres[idx]
-        save_array_as_image(ex, images_dir + '/' + subdir + '/' + model_prefix + prefix + "_im%04d_orig.jpg" % idx, quality)
+        save_array_as_image(ex, images_dir + '/' + subdir + '/' + model_prefix + '/' + prefix + "_im%04d_orig.jpg" % idx, quality)
 
 def save_images_predicted(lowres, upscaler, idx_start, idx_stop, prefix, batch, quality = 100):
     
