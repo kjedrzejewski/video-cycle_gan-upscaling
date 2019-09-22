@@ -96,18 +96,36 @@ def load_data_from_dirs(dirs, ext, limit = np.inf, prog_func = indentity_func):
                 count = count + 1
             if count >= limit:
                 break
-    return files     
+    return files
+
+def load_data_from_dir(dir_loc, ext, limit = np.inf, prog_func = indentity_func):
+    files = []
+    count = 0
+    file_list = os.listdir(dir_loc)
+    limit = min(len(file_list), limit)
+    file_list = file_list[0:limit]
+    for f in prog_func(file_list, desc = 'Loading files:'): 
+        if f.endswith(ext):
+            image = data.imread(os.path.join(dir_loc,f))
+            if len(image.shape) > 2:
+                files.append(image)
+            count = count + 1
+        if count >= limit:
+            break
+    return files  
 
 def load_data(directory, ext):
 
-    files = load_data_from_dirs(load_path(directory), ext)
+    files = load_data_from_dir(directory, ext)
     return files
     
 def load_training_data(directory, ext, number_of_images = 1000, train_test_ratio = 0.8, downscale_factor = 4, prog_func = indentity_func):
-
-    number_of_train_images = int(number_of_images * train_test_ratio)
     
-    files = load_data_from_dirs(load_path(directory), ext, limit = number_of_images, prog_func = prog_func)
+    files = load_data_from_dir(directory, ext, limit = number_of_images, prog_func = prog_func)
+    
+    number_of_images = min(len(files), number_of_images)
+    
+    number_of_train_images = int(number_of_images * train_test_ratio)
     
     x_train = files[:number_of_train_images]
     x_test = files[number_of_train_images:number_of_images]

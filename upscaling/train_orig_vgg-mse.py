@@ -100,7 +100,8 @@ def make_upscaler(input_shape):
 
 model_save_dir = 'trained_model'
 images_dir = 'example_images'
-subdir = 'photo'
+subdir = 'ukiyo'
+model_prefix = "orig_vgg-mse"
 
 def save_array_as_image(a, filename, quality = 100):
     a = np.uint8(np.around((a + 1) * 127.5))
@@ -119,16 +120,16 @@ def save_images_orig(lowres, highres, idx_start, idx_stop, prefix, quality = 100
     
     for idx in range(idx_start, idx_stop + 1):
         ex = lowres[idx]
-        rescale_save_array_as_image(ex, images_dir + '/' + subdir + '/' + prefix + "_im%04d_lowres.jpg" % idx, quality)
+        rescale_save_array_as_image(ex, images_dir + '/' + subdir + '/' + model_prefix + '/' + prefix + "_im%04d_lowres.jpg" % idx, quality)
 
         ex = highres[idx]
-        save_array_as_image(ex, images_dir + '/' + subdir + '/' + prefix + "_im%04d_orig.jpg" % idx, quality)
+        save_array_as_image(ex, images_dir + '/' + subdir + '/' + model_prefix + prefix + "_im%04d_orig.jpg" % idx, quality)
 
 def save_images_predicted(lowres, upscaler, idx_start, idx_stop, prefix, batch, quality = 100):
     
     for idx in range(idx_start, idx_stop + 1):
         ex = upscaler.predict(lowres[[idx]])[0]
-        save_array_as_image(ex, images_dir + '/' + subdir + '/' + prefix + "_im%04d_upscaled_%06d.jpg" % (idx, batch), quality)
+        save_array_as_image(ex, images_dir + '/' + subdir + '/' + model_prefix + '/' + prefix + "_im%04d_upscaled_%06d.jpg" % (idx, batch), quality)
 
 
 
@@ -137,7 +138,7 @@ def save_images_predicted(lowres, upscaler, idx_start, idx_stop, prefix, batch, 
 
 
 
-input_dir = '../images/photo_fullhd'
+input_dir = '../images/ukiyo-e_fullhd'
 number_of_images = 1000
 train_test_ratio = 0.95
 
@@ -160,12 +161,10 @@ upscaler_training_model.compile(loss=vgg_loss, optimizer=Adam())
 batch_count = 40001
 batch_size = 1
 
-model_prefix = "orig_vgg-mse"
-
-loss_file_name = model_save_dir + '/' + subdir + '/' + 'losses_upscaler_' + model_prefix + '.txt'
-best_loss_file_name = model_save_dir + '/' + subdir + '/' + 'losses_upscaler_' + model_prefix + '_best.txt'
-model_file_name_tpl = 'model_upscaler_' + model_prefix + '_%06db.h5'
-model_file_name_best = 'model_upscaler_' + model_prefix + '_best.h5'
+loss_file_name = model_save_dir + '/' + subdir + '/' + model_prefix + '/' + 'losses_upscaler_' + model_prefix + '.txt'
+best_loss_file_name = model_save_dir + '/' + subdir + '/' + model_prefix + '/' + 'losses_upscaler_' + model_prefix + '_best.txt'
+model_file_name_tpl = model_save_dir + '/' + subdir + '/' + model_prefix + '/' + 'model_upscaler_' + model_prefix + '_%06db.h5'
+model_file_name_best = model_save_dir + '/' + subdir + '/' + model_prefix + '/' + 'model_upscaler_' + model_prefix + '_best.h5'
 model_save_batches = 500
 
 agg_loss = 0.03
@@ -201,13 +200,13 @@ for b in tqdm(range(batch_count), desc = 'Batch'):
     if agg_loss < best_loss:
         best_loss = agg_loss
         
-        upscaler.save(model_save_dir + '/' + subdir + '/' + model_file_name_best)
+        upscaler.save(model_file_name_best)
         
         loss_file = open(best_loss_file_name, 'a')
         loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
         loss_file.close()
     
     if(b % model_save_batches == 0):
-        upscaler.save(model_save_dir + '/' + subdir + '/' + model_file_name_tpl % b)
+        upscaler.save(model_file_name_tpl % b)
         save_images_predicted(x_train_lr, upscaler, 0, 10, model_prefix + '_train', b)
         save_images_predicted(x_test_lr, upscaler, 0, 10, model_prefix + '_test', b)
