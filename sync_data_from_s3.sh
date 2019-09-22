@@ -1,5 +1,5 @@
 #!/bin/sh
 
-aws s3 sync upscaling/example_images s3://prd-prsn-er-pet-projects/upscaling/example_outputs
-aws s3 sync upscaling/trained_model s3://prd-prsn-er-pet-projects/upscaling/models
-aws s3 sync images s3://prd-prsn-er-pet-projects/upscaling/images
+aws s3 sync s3://prd-prsn-er-pet-projects/upscaling/example_outputs upscaling/example_images
+aws s3 sync s3://prd-prsn-er-pet-projects/upscaling/models upscaling/trained_model
+aws s3 sync s3://prd-prsn-er-pet-projects/upscaling/images images
