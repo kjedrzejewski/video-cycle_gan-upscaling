@@ -29,7 +29,6 @@ def res_block_gen(model, kernal_size, filters, strides):
     
     model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
     model = BatchNormalization(momentum = 0.5)(model)
-    # Using Parametric ReLU
     model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2])(model)
     model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
     model = BatchNormalization(momentum = 0.5)(model)
@@ -43,7 +42,6 @@ def up_sampling_block(model, kernal_size, filters, strides):
     
     model = Conv2DTranspose(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
     model = LeakyReLU(alpha = 0.2)(model)
-    #model = PReLU(shared_axes=[1,2,3])(model)
     
     return model
 
@@ -163,20 +161,25 @@ upscaler_training_model.compile(loss=vgg_loss, optimizer=Adam())
 batch_count = 40001
 batch_size = 1
 
-loss_file_name = 'losses_upscaler_skip-con_only-vgg.txt'
-model_file_name_tpl = 'model_upscaler_skip-con_only-vgg_%06db.h5'
+model_prefix = "skip-con_vgg-only"
+
+loss_file_name = model_save_dir + '/' + subdir + '/' + 'losses_upscaler_' + model_prefix + '.txt'
+best_loss_file_name = model_save_dir + '/' + subdir + '/' + 'losses_upscaler_' + model_prefix + '_best.txt'
+model_file_name_tpl = 'model_upscaler_' + model_prefix + '_%06db.h5'
+model_file_name_best = 'model_upscaler_' + model_prefix + '_best.h5'
 model_save_batches = 500
 
 agg_loss = None
 loss_update_rate = 0.01
 
-loss_file = open(model_save_dir + '/' + loss_file_name, 'w+')
+loss_file = open(loss_file_name, 'w+')
 loss_file.write('batch\tloss\tagg_loss\n')
 loss_file.close()
 
-save_images_orig(x_train_lr, x_train_hr, 0, 10, "skip-con_vgg-only_train")
-save_images_orig(x_test_lr, x_test_hr, 0, 10, "skip-con_vgg-only_test")
+save_images_orig(x_train_lr, x_train_hr, 0, 10, model_prefix + '_train')
+save_images_orig(x_test_lr, x_test_hr, 0, 10, model_prefix + '_test')
 
+best_loss = np.inf
 
 for b in tqdm(range(batch_count), desc = 'Batch'):
 
@@ -190,12 +193,22 @@ for b in tqdm(range(batch_count), desc = 'Batch'):
         agg_loss = loss
     else:
         agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
-
-    loss_file = open(model_save_dir + '/' + loss_file_name, 'a')
+        
+    if agg_loss < best_loss:
+        best_loss = agg_loss
+        
+        upscaler.save(model_save_dir + '/' + subdir + '/' + model_file_name_best)
+        
+        loss_file = open(best_loss_file_name, 'w+')
+        loss_file.write('batch\tloss\tagg_loss\n')
+        loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
+        loss_file.close()
+    
+    loss_file = open(loss_file_name, 'a')
     loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
     loss_file.close()
     
     if(b % model_save_batches == 0):
-        upscaler.save(model_save_dir + '/' + model_file_name_tpl % b)
-        save_images_predicted(x_train_lr, upscaler, 0, 10, "skip-con_vgg-only_train", b)
-        save_images_predicted(x_test_lr, upscaler, 0, 10, "skip-con_vgg-only_test", b)
+        upscaler.save(model_save_dir + '/' + subdir + '/' + model_file_name_tpl % b)
+        save_images_predicted(x_train_lr, upscaler, 0, 10, model_prefix + '_train', b)
+        save_images_predicted(x_test_lr, upscaler, 0, 10, model_prefix + '_test', b)
