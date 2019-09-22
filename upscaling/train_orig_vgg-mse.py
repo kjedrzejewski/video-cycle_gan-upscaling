@@ -194,6 +194,10 @@ for b in tqdm(range(batch_count), desc = 'Batch'):
 
     agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
     
+    loss_file = open(loss_file_name, 'a')
+    loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
+    loss_file.close()
+    
     if agg_loss < best_loss:
         best_loss = agg_loss
         
@@ -202,10 +206,6 @@ for b in tqdm(range(batch_count), desc = 'Batch'):
         loss_file = open(best_loss_file_name, 'a')
         loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
         loss_file.close()
-    
-    loss_file = open(loss_file_name, 'a')
-    loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
-    loss_file.close()
     
     if(b % model_save_batches == 0):
         upscaler.save(model_save_dir + '/' + subdir + '/' + model_file_name_tpl % b)
