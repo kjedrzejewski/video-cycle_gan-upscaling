@@ -2,6 +2,7 @@ from skimage import data, io, filters
 import numpy as np
 from numpy import array
 from numpy.random import randint
+import pandas as pd
 from PIL import Image
 import os
 import sys
@@ -11,10 +12,115 @@ def indentity_func(x, **kwargs):
     return x
 
 
+def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func = indentity_func, downscale_factor = 4, desc = "Loading files"):
+    file_list = os.listdir(dir_loc)
+    file_list = sorted(list(filter(lambda s: s.endswith(ext), file_list)))
+    limit = min(len(file_list), limit)
+    file_list = file_list[0:limit]
+    
+    files = pd.DataFrame({
+        'filename': [],
+        'image_hr': [],
+        'image_lr': []
+    })
+    for f in prog_func(file_list, desc = desc):
+        path = os.path.join(dir_loc,f)
+        
+        img_hr = Image.open(path).copy()
+        
+        lr_width = img_hr.width // downscale_factor
+        lr_height = img_hr.height // downscale_factor
+        
+        img_lr = img_hr.resize((lr_width, lr_height), Image.LANCZOS)
+        
+        files = files.append({
+            'filename': f,
+            'image_hr': img_hr,
+            'image_lr': img_lr
+        },ignore_index=True)
+    
+    return files
+
+
+def split_images_train_test(images_df, train_test_ratio = 0.8):
+    number_of_images = images_df.shape[0]
+    number_of_train_images = int(round(number_of_images * train_test_ratio))
+    
+    images_df_train = images_df[:number_of_train_images]
+    images_df_test  = images_df[number_of_train_images:number_of_images]
+    
+    return images_df_train, images_df_test
+
+
+def select_random_rows(images_df, n = 1):
+    row_indices = np.random.randint(0, images_df.shape[0], size=n)
+    
+    return images_df.iloc[row_indices]
+
+
+def convert_array_to_image(array):
+    array = np.uint8(np.around((array + 1) * 127.5))
+    array = array.swapaxes(0,1)
+    
+    return Image.fromarray(array)
+    
+    
+def convert_image_series_to_array(image_series):
+    array = np.array([np.array(img).swapaxes(0,1) for img in image_series])
+    
+    array = (array / 127.5) - 1
+    
+    return array
+
+
+def convert_imagesdf_to_arrays(images_df):
+    array_hr = convert_image_series_to_array(images_df.image_hr)
+    array_lr = convert_image_series_to_array(images_df.image_lr)
+    
+    return array_hr, array_lr
+    
+    
+def save_array_as_image(a, filename, quality = 100):
+    a_img = convert_array_to_image(a)
+    a_img.save(filename, quality = quality)
+
+    
+def rescale_save_array_as_image(a, filename, target_size = (1920, 1080), quality = 100):
+    a_img = convert_array_to_image(a)
+    a_img = a_img.resize(target_size, Image.BICUBIC)
+    a_img.save(filename, quality = quality)
+
+    
+def save_images_orig(lowres, highres, idx_start, idx_stop, path, prefix, target_size = (1920, 1080), quality = 100):
+    
+    for idx in range(idx_start, idx_stop + 1):
+        ex = lowres[idx]
+        rescale_save_array_as_image(ex, path + '/' + prefix + "_im%04d_lowres.jpg" % idx, target_size = target_size, quality = quality)
+
+        ex = highres[idx]
+        save_array_as_image(ex, path + '/' + prefix + "_im%04d_orig.jpg" % idx, quality = quality)
+
+        
+def save_images_predicted(lowres, upscaler, idx_start, idx_stop, path, prefix, batch, quality = 100):
+    
+    for idx in range(idx_start, idx_stop + 1):
+        ex = upscaler.predict(lowres[[idx]])[0]
+        save_array_as_image(ex, path + '/' + prefix + "_im%04d_upscaled_%06d.jpg" % (idx, batch), quality = quality)
+
+
+    
+
+
+    
+    
+    
+    
+
+
+
 
 def load_data_from_dir(dir_loc, ext, limit = np.inf, prog_func = indentity_func):
     files = []
-    count = 0
     file_list = os.listdir(dir_loc)
     limit = min(len(file_list), limit)
     file_list = file_list[0:limit]
@@ -23,9 +129,6 @@ def load_data_from_dir(dir_loc, ext, limit = np.inf, prog_func = indentity_func)
             image = data.imread(os.path.join(dir_loc,f))
             if len(image.shape) > 2:
                 files.append(image)
-            count = count + 1
-        if count >= limit:
-            break
     return files
 
 def load_train_test_data(directory, ext, number_of_images = 1000, train_test_ratio = 0.8, lr_shape = (480,270,3), prog_func = indentity_func):
@@ -97,32 +200,3 @@ def denormalize(input_data):
     input_data = (input_data + 1) * 127.5
     return input_data.astype(np.uint8)
 
-
-
-def save_array_as_image(a, filename, quality = 100):
-    a = np.uint8(np.around((a + 1) * 127.5))
-    a = np.swapaxes(a, 0, 1)
-    a_img = Image.fromarray(a)
-    a_img.save(filename, quality = quality)
-    
-def rescale_save_array_as_image(a, filename, quality = 100):
-    a = np.uint8(np.around((a + 1) * 127.5))
-    a = np.swapaxes(a, 0, 1)
-    a_img = Image.fromarray(a)
-    a_img = a_img.resize((1920, 1080), Image.BICUBIC)
-    a_img.save(filename, quality = quality)
-
-def save_images_orig(lowres, highres, idx_start, idx_stop, path, prefix, quality = 100):
-    
-    for idx in range(idx_start, idx_stop + 1):
-        ex = lowres[idx]
-        rescale_save_array_as_image(ex, path + '/' + prefix + "_im%04d_lowres.jpg" % idx, quality)
-
-        ex = highres[idx]
-        save_array_as_image(ex, path + '/' + prefix + "_im%04d_orig.jpg" % idx, quality)
-
-def save_images_predicted(lowres, upscaler, idx_start, idx_stop, path, prefix, batch, quality = 100):
-    
-    for idx in range(idx_start, idx_stop + 1):
-        ex = upscaler.predict(lowres[[idx]])[0]
-        save_array_as_image(ex, path + '/' + prefix + "_im%04d_upscaled_%06d.jpg" % (idx, batch), quality)
