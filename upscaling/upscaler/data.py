@@ -37,7 +37,7 @@ def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func =
             'filename': f,
             'image_hr': img_hr,
             'image_lr': img_lr
-        },ignore_index=True)
+        }, ignore_index=True)
     
     return files
 
@@ -46,16 +46,21 @@ def split_images_train_test(images_df, train_test_ratio = 0.8):
     number_of_images = images_df.shape[0]
     number_of_train_images = int(round(number_of_images * train_test_ratio))
     
-    images_df_train = images_df[:number_of_train_images]
-    images_df_test  = images_df[number_of_train_images:number_of_images]
+    images_df_train = images_df[:number_of_train_images].reset_index(drop=True)
+    images_df_test  = images_df[number_of_train_images:number_of_images].reset_index(drop=True)
     
     return images_df_train, images_df_test
+
+
+
 
 
 def select_random_rows(images_df, n = 1):
     row_indices = np.random.randint(0, images_df.shape[0], size=n)
     
     return images_df.iloc[row_indices]
+
+
 
 
 def convert_array_to_image(array):
@@ -85,7 +90,11 @@ def convert_imagesdf_to_arrays(images_df):
     array_lr = convert_image_series_to_array(images_df.image_lr)
     
     return array_hr, array_lr
-    
+
+
+
+
+
     
 def save_array_as_image(a, filename, quality = 100):
     a_img = convert_array_to_image(a)

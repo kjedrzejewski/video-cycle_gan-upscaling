@@ -4,13 +4,16 @@ from upscaler.data import save_images_orig, save_images_predicted
 from upscaler.model import make_upscaler_skip_con, make_upscaler_orig
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
 from upscaler.model import compile_training_model
+from upscaler.json import DataFrameEncoder
 
 import math
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 import os
 import sys
 import argparse
+import json
 
 if __name__== "__main__":
     
@@ -99,6 +102,19 @@ if __name__== "__main__":
     best_loss_file_name = model_loss_path + '/' + 'losses_upscaler_' + model_prefix + '_best.txt'
     model_file_name_tpl = model_loss_path + '/' + 'model_upscaler_' + model_prefix + '_%06db.h5'
     model_file_name_best = model_loss_path + '/' + 'model_upscaler_' + model_prefix + '_best.h5'
+    param_file_path = model_loss_path + '/' + 'parameters.json'
+    progress_file_path = model_loss_path + '/' + 'progress.json'
+
+    
+    ###########################################################
+    ## Saving train parameters file
+    ###########################################################
+    
+    parameters = vars(values)
+    parameters['model_prefix'] = model_prefix
+    
+    with open(param_file_path, 'w+') as param_file:
+        json.dump(parameters, param_file, indent = 4)
 
 
     ###########################################################
@@ -136,55 +152,97 @@ if __name__== "__main__":
     # setting up the model for training
     upscaler_training_model = compile_training_model(upscaler, loss)
     
+    
     ###########################################################
     ## Model training
     ###########################################################
     
     agg_loss = 0.0
+    prev_loss = -1
     loss_update_rate = 0.01
+    best_loss = np.inf
+    loss_decreases = False
+    
+    # progress log initialisation
+    progress = {
+        'best_model': None,
+        'saved_models': None
+    }
+    
+    saved_models = pd.DataFrame({
+        'batch': [],
+        'loss': [],
+        'agg_loss': [],
+        'path': []
+    })
     
     # loss logs initialisations
-    loss_file = open(loss_file_name, 'w+')
-    loss_file.write('batch\tloss\tagg_loss\n')
-    loss_file.close()
+    with open(loss_file_name, 'w+') as loss_file:
+        loss_file.write('batch\tloss\tagg_loss\n')
 
-    loss_file = open(best_loss_file_name, 'w+')
-    loss_file.write('batch\tloss\tagg_loss\n')
-    loss_file.close()
+    with open(best_loss_file_name, 'w+') as loss_file:
+        loss_file.write('batch\tloss\tagg_loss\n')
+    
     
     # saving lowres and highres examples
-    save_images_orig(x_train_lr, x_train_hr, 0, 10, image_path, model_prefix + '_train')
-    save_images_orig(x_test_lr, x_test_hr, 0, 10, image_path, model_prefix + '_test')
+    save_images_orig(images_train, 0, 10, image_path, model_prefix + '_train')
+    save_images_orig(images_test, 0, 10, image_path, model_prefix + '_test')
 
-    best_loss = np.inf
-    
-    sys.exit(0)
     
     # actual training loop
     for b in tqdm(range(values.number_of_batches), desc = 'Batch'):
 
-        rand_nums = np.random.randint(0, x_train_hr.shape[0], size=values.batch_size)
+        batch_df = select_random_rows(images_train, n=values.batch_size)
 
-        image_batch_hr = x_train_hr[rand_nums]
-        image_batch_lr = x_train_lr[rand_nums]
+        image_batch_hr, image_batch_lr = convert_imagesdf_to_arrays(batch_df)
         loss = upscaler_training_model.train_on_batch(image_batch_lr, image_batch_hr)
 
+        # check if aggregated loss started to decrease, only then we start looking for the best model
+        prev_loss = agg_loss
         agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
+        loss_decreases = loss_decreases or (prev_loss > agg_loss)
 
-        loss_file = open(loss_file_name, 'a')
-        loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
-        loss_file.close()
-
-        if b >= values.model_save_freq and agg_loss < best_loss:
+        with open(loss_file_name, 'a') as loss_file:
+            loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
+        
+        # update progress log with best model
+        if loss_decreases and agg_loss < best_loss:
             best_loss = agg_loss
 
             upscaler.save(model_file_name_best)
 
-            loss_file = open(best_loss_file_name, 'a')
-            loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
-            loss_file.close()
+            with open(best_loss_file_name, 'a') as loss_file:
+                loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
+            
+            best_model_progress = {
+                'batch': b,
+                'loss': float(loss),
+                'agg_loss': float(agg_loss),
+                'saved': model_file_name_best
+            }
+            progress['best_model'] = best_model_progress
+            
+            with open(progress_file_path, 'w+') as progress_file:
+                json.dump(progress, progress_file, indent = 4, cls = DataFrameEncoder)
 
+        # saving a next state of the model
         if(b % values.model_save_freq == 0):
-            upscaler.save(model_file_name_tpl % b)
-            save_images_predicted(x_train_lr, upscaler, 0, 10, image_path, model_prefix + '_train', b)
-            save_images_predicted(x_test_lr, upscaler, 0, 10, image_path, model_prefix + '_test', b)
+            model_file_name = model_file_name_tpl % b
+            upscaler.save(model_file_name)
+            
+            # update progress log with next model saved
+            saved_models = saved_models.append({
+                'batch': b,
+                'loss': float(loss),
+                'agg_loss': float(agg_loss),
+                'path': model_file_name
+            }, ignore_index=True)
+            
+            progress['saved_models'] = saved_models
+            
+            with open(progress_file_path, 'w+') as progress_file:
+                json.dump(progress, progress_file, indent = 4, cls = DataFrameEncoder)
+            
+            save_images_predicted(images_train, upscaler, 0, 10, image_path, model_prefix + '_train', b)
+            save_images_predicted(images_test, upscaler, 0, 10, image_path, model_prefix + '_test', b)
+            
