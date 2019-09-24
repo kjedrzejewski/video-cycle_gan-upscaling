@@ -63,11 +63,18 @@ def convert_array_to_image(array):
     array = array.swapaxes(0,1)
     
     return Image.fromarray(array)
+
+
+def convert_image_to_array(img):
+    array = np.array(img)
+    array = (array / 127.5) - 1
+    array = array.swapaxes(0,1)
+    
+    return array
     
     
 def convert_image_series_to_array(image_series):
     array = np.array([np.array(img).swapaxes(0,1) for img in image_series])
-    
     array = (array / 127.5) - 1
     
     return array
@@ -91,20 +98,26 @@ def rescale_save_array_as_image(a, filename, target_size = (1920, 1080), quality
     a_img.save(filename, quality = quality)
 
     
-def save_images_orig(lowres, highres, idx_start, idx_stop, path, prefix, target_size = (1920, 1080), quality = 100):
+def save_images_orig(images_df, idx_start, idx_stop, path, prefix, target_size = (1920, 1080), quality = 100):
     
-    for idx in range(idx_start, idx_stop + 1):
-        ex = lowres[idx]
-        rescale_save_array_as_image(ex, path + '/' + prefix + "_im%04d_lowres.jpg" % idx, target_size = target_size, quality = quality)
-
-        ex = highres[idx]
-        save_array_as_image(ex, path + '/' + prefix + "_im%04d_orig.jpg" % idx, quality = quality)
-
+    idx_stop = min(idx_stop, images_df.shape[0])
+    
+    for idx in range(idx_start, idx_stop):
+        img = images_df.image_lr[idx]
+        img = img.resize(target_size, Image.BICUBIC)
+        img.save(path + '/' + prefix + "_im%04d_lowres.jpg" % idx, quality = quality)
         
-def save_images_predicted(lowres, upscaler, idx_start, idx_stop, path, prefix, batch, quality = 100):
+        img = images_df.image_hr[idx]
+        img.save(path + '/' + prefix + "_im%04d_orig.jpg" % idx, quality = quality)
+
+
+def save_images_predicted(images_df, upscaler, idx_start, idx_stop, path, prefix, batch, quality = 100):
     
-    for idx in range(idx_start, idx_stop + 1):
-        ex = upscaler.predict(lowres[[idx]])[0]
+    idx_stop = min(idx_stop, images_df.shape[0])
+    
+    for idx in range(idx_start, idx_stop):
+        ex = convert_image_series_to_array(images_df.image_lr[[idx]])
+        ex = upscaler.predict(ex)[0]
         save_array_as_image(ex, path + '/' + prefix + "_im%04d_upscaled_%06d.jpg" % (idx, batch), quality = quality)
 
 

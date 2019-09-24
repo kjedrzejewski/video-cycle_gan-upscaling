@@ -1,19 +1,16 @@
-from upscaler.data import load_train_test_data
+from upscaler.data import load_images_from_dir_and_downscale, split_images_train_test
+from upscaler.data import select_random_rows, convert_imagesdf_to_arrays, convert_array_to_image
 from upscaler.data import save_images_orig, save_images_predicted
 from upscaler.model import make_upscaler_skip_con, make_upscaler_orig
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
 from upscaler.model import compile_training_model
 
+import math
 import numpy as np
 from tqdm import tqdm
 import os
 import sys
 import argparse
-
-# how many times the original image is scaled down
-downscale_factor = 4
-output_image_shape = (1920,1080,3)
-input_image_shape = (480,270,3)
 
 if __name__== "__main__":
     
@@ -35,7 +32,7 @@ if __name__== "__main__":
     
     parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con'], help='Model to be used')
     
-    parser.add_argument('-l', '--loss', action='store', dest='loss', default='vgg-mse', choices=['vgg-only','vgg-mae','vgg-mse'], help='Loss function to be used for the training')
+    parser.add_argument('-l', '--loss', action='store', dest='loss', default='vgg-only', choices=['vgg-only','vgg-mae','vgg-mse'], help='Loss function to be used for the training')
     
     parser.add_argument('-lw', '--non_vgg_loss_weight', action='store', dest='non_vgg_loss_weight', default='1.0', help='Weight of the loss other than VGG (if there is any)', type=float)
     
@@ -45,7 +42,26 @@ if __name__== "__main__":
     
     parser.add_argument('-nb', '--number_of_batches', action='store', dest='number_of_batches', default='40001', help='Number batches to be run', type=int)
     
+    parser.add_argument('-d', '--downscale_factor', action='store', dest='downscale_factor', default='4', help='Downscale factor', type=int)
+    
     values = parser.parse_args()
+    
+    
+    ###########################################################
+    ## Parameters of input and output images
+    ###########################################################
+    
+    downscale_factor = values.downscale_factor
+    upscale_times = int(math.log(downscale_factor,2))
+    output_image_shape = (1920,1080,3)
+    input_image_shape = (
+        output_image_shape[0] // downscale_factor,
+        output_image_shape[1] // downscale_factor,
+        output_image_shape[2]
+    )
+    if int(math.log(downscale_factor,2)) != math.log(downscale_factor,2):
+        print("Downscale factor needs to be a power of 2. It was %d." % downscale_factor)
+        sys.exit(0)
     
     
     ###########################################################
@@ -62,7 +78,7 @@ if __name__== "__main__":
     #model_prefix = "orig_vgg-mse"
     model_prefix = values.output_prefix
     if model_prefix == 'auto':
-        model_prefix = values.model + "_" + values.loss
+        model_prefix = values.model + "_" + values.loss + ("_x%d" % downscale_factor)
         print("Prefix generated automatically: '" + model_prefix + "'")
     
     number_of_images = values.image_count
@@ -88,15 +104,16 @@ if __name__== "__main__":
     ###########################################################
     ## Loading the data
     ###########################################################
-    
-    x_train_lr, x_train_hr, x_test_lr, x_test_hr = load_train_test_data(
-        input_dir, '.jpg',
-        number_of_images,
-        train_test_ratio,
-        input_image_shape,
-        prog_func=tqdm
+        
+    images_all = load_images_from_dir_and_downscale(
+        input_dir,
+        '.jpg',
+        limit = number_of_images,
+        downscale_factor = downscale_factor,
+        prog_func = tqdm
     )
     
+    images_train, images_test = split_images_train_test(images_all, train_test_ratio)
     
     ###########################################################
     ## Setting up the model for training
@@ -104,9 +121,9 @@ if __name__== "__main__":
     
     # create the model instance
     if values.model == 'orig':
-        upscaler = make_upscaler_orig(input_image_shape)
+        upscaler = make_upscaler_orig(input_image_shape, upscale_times)
     elif values.model == 'skip-con':
-        upscaler = make_upscaler_skip_con(input_image_shape)
+        upscaler = make_upscaler_skip_con(input_image_shape, upscale_times)
     
     # create the loss
     if values.loss == 'vgg-only':
@@ -118,7 +135,6 @@ if __name__== "__main__":
     
     # setting up the model for training
     upscaler_training_model = compile_training_model(upscaler, loss)
-    
     
     ###########################################################
     ## Model training
@@ -141,6 +157,8 @@ if __name__== "__main__":
     save_images_orig(x_test_lr, x_test_hr, 0, 10, image_path, model_prefix + '_test')
 
     best_loss = np.inf
+    
+    sys.exit(0)
     
     # actual training loop
     for b in tqdm(range(values.number_of_batches), desc = 'Batch'):

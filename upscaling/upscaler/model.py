@@ -9,6 +9,7 @@ from keras.layers.advanced_activations import LeakyReLU, PReLU
 from keras.layers.normalization import BatchNormalization
 from keras.models import load_model
 
+
 def residual_block(model, kernal_size, filters, strides):
     
     gen = model
@@ -22,6 +23,7 @@ def residual_block(model, kernal_size, filters, strides):
     model = Add()([gen, model])
     
     return model
+
 
 def upsampling_block(model, kernel_size, filters, strides):
     
@@ -88,7 +90,7 @@ class VGG_MAE_LOSS(object):
 
 
 
-def make_upscaler_orig(input_image_shape):
+def make_upscaler_orig(input_image_shape, upscale_times = 2):
         
     upscaler_input = Input(shape = input_image_shape)
 
@@ -104,7 +106,7 @@ def make_upscaler_orig(input_image_shape):
     model = BatchNormalization()(model)
     model = Add()([upsc_model, model])
 
-    for index in range(2):
+    for index in range(upscale_times):
         model = upsampling_block(model, 3, 256, 2)
 
     model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)
@@ -116,7 +118,7 @@ def make_upscaler_orig(input_image_shape):
 
 
 
-def make_upscaler_skip_con(input_image_shape):
+def make_upscaler_skip_con(input_image_shape, upscale_times = 2):
         
     upscaler_input = Input(shape = input_image_shape)
 
@@ -132,8 +134,8 @@ def make_upscaler_skip_con(input_image_shape):
     model = BatchNormalization()(model)
     model = Add()([upsc_model, model])
 
-    for index in range(2):
-        model = upsampling_block(model, 3, 224, 2) # smaller number of filter due to OOM error
+    for index in range(upscale_times):
+        model = upsampling_block(model, 3, 224, 2) # smaller number of filters due to OOM error
         
     resized_input = (Lambda(lambda x: K.resize_images(x, 4, 4, "channels_last", "bilinear")))(upscaler_input)
     model = Concatenate(axis = 3)([resized_input, model])
