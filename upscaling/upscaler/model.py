@@ -137,7 +137,7 @@ def make_upscaler_skip_con(input_image_shape, upscale_times = 2):
     for index in range(upscale_times):
         model = upsampling_block(model, 3, 224, 2) # smaller number of filters due to OOM error
         
-    resized_input = (Lambda(lambda x: K.resize_images(x, 4, 4, "channels_last", "bilinear")))(upscaler_input)
+    resized_input = (Lambda(lambda x: K.resize_images(x, 2 ** upscale_times, 2 ** upscale_times, "channels_last", "bilinear")))(upscaler_input)
     model = Concatenate(axis = 3)([resized_input, model])
 
     model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)

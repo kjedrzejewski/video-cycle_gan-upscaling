@@ -1,6 +1,7 @@
 from upscaler.data import load_images_from_dir_and_downscale, split_images_train_test
 from upscaler.data import select_random_rows, convert_imagesdf_to_arrays, convert_array_to_image
 from upscaler.data import save_images_orig, save_images_predicted
+from upscaler.data import save_images_orig_png, save_images_predicted_png
 from upscaler.model import make_upscaler_skip_con, make_upscaler_orig
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
 from upscaler.model import compile_training_model
@@ -185,8 +186,8 @@ if __name__== "__main__":
     
     
     # saving lowres and highres examples
-    save_images_orig(images_train, 0, 10, image_path, model_prefix + '_train')
-    save_images_orig(images_test, 0, 10, image_path, model_prefix + '_test')
+    save_images_orig(images_train, 0, 10, image_path, model_prefix + '_train', quality = 95)
+    save_images_orig(images_test, 0, 10, image_path, model_prefix + '_test', quality = 95)
 
     
     # actual training loop
@@ -243,6 +244,6 @@ if __name__== "__main__":
             with open(progress_file_path, 'w+') as progress_file:
                 json.dump(progress, progress_file, indent = 4, cls = DataFrameEncoder)
             
-            save_images_predicted(images_train, upscaler, 0, 10, image_path, model_prefix + '_train', b)
-            save_images_predicted(images_test, upscaler, 0, 10, image_path, model_prefix + '_test', b)
+            save_images_predicted(images_train, upscaler, 0, 10, image_path, model_prefix + '_train', b, quality = 95)
+            save_images_predicted(images_test, upscaler, 0, 10, image_path, model_prefix + '_test', b, quality = 95)
             
