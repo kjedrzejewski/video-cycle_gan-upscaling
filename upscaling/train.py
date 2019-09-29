@@ -34,7 +34,7 @@ if __name__== "__main__":
     
     parser.add_argument('-tr', '--train_test_ratio', action='store', dest='train_test_ratio', default='0.95', help='Ratio of splitting images into the test and train sets', type=float)
     
-    parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con'], help='Model to be used')
+    parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con','unetish'], help='Model to be used')
     
     parser.add_argument('-l', '--loss', action='store', dest='loss', default='vgg-only', choices=['vgg-only','vgg-mae','vgg-mse'], help='Loss function to be used for the training')
     
