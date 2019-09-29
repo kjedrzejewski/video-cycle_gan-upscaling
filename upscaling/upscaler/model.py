@@ -230,7 +230,7 @@ def concatenate_layers(input_layer, output_down, output_up, name):
 
 
 
-def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 2, downscale_times = 2, initial_step_filter_count = 128): 
+def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 2, initial_step_filter_count = 64): 
 
     upscale_times = int(math.log(upscale_factor,2)) + downscale_times
     input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
@@ -259,7 +259,7 @@ def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 2,
     
     # steps at the bottom of U
     for index in range(step_size):
-        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same"+str(index))
+        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index))
     
     
     down_outputs_len = len(outputs)
@@ -275,6 +275,10 @@ def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 2,
         for index in range(step_size):
             model = same_size_unetish_block(model, 3, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index))
     
+
+    # adding upscaled original image
+    resized_input = (Lambda(lambda x: K.resize_images(x, upscale_factor, upscale_factor, "channels_last", "bilinear")))(upscaler_input)
+    model = Concatenate(axis = 3)([resized_input, model])
     
     model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name = 'final/Conv2D')(model)
     model = Activation('tanh', name = 'final/tanh')(model)

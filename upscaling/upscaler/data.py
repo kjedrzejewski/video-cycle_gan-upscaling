@@ -43,11 +43,14 @@ def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func =
 
 
 def split_images_train_test(images_df, train_test_ratio = 0.8):
+    
     number_of_images = images_df.shape[0]
     number_of_train_images = int(round(number_of_images * train_test_ratio))
     
-    images_df_train = images_df[:number_of_train_images].reset_index(drop=True)
-    images_df_test  = images_df[number_of_train_images:number_of_images].reset_index(drop=True)
+    train_ids = np.random.choice(images_df.shape[0], size=number_of_train_images, replace=False)
+    
+    images_df_train = images_df.iloc[train_ids].reset_index(drop=True)
+    images_df_test  = images_df[~images_df.index.isin(train_ids)].reset_index(drop=True)
     
     return images_df_train, images_df_test
 
@@ -99,13 +102,13 @@ def save_array_as_image(a, filename, **kwargs):
     a_img.save(filename, **kwargs)
 
     
-def rescale_save_array_as_image(a, filename, target_size = (1080, 1920), **kwargs):
+def rescale_save_array_as_image(a, filename, target_size = (1920, 1080), **kwargs):
     a_img = convert_array_to_image(a)
     a_img = a_img.resize(target_size, Image.BICUBIC)
     a_img.save(filename, **kwargs)
 
     
-def save_images_orig(images_df, idx_start, idx_stop, path, prefix, target_size = (1080, 1920), quality = 95):
+def save_images_orig(images_df, idx_start, idx_stop, path, prefix, target_size = (1920, 1080), quality = 95):
     
     idx_stop = min(idx_stop, images_df.shape[0])
     
@@ -129,7 +132,7 @@ def save_images_predicted(images_df, upscaler, idx_start, idx_stop, path, prefix
 
 
                         
-def save_images_orig_png(images_df, idx_start, idx_stop, path, prefix, target_size = (1080, 1920)):
+def save_images_orig_png(images_df, idx_start, idx_stop, path, prefix, target_size = (1920, 1080)):
     
     idx_stop = min(idx_stop, images_df.shape[0])
     

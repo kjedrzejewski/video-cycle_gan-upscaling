@@ -5,7 +5,7 @@ from upscaler.data import save_images_orig_png, save_images_predicted_png
 from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
 from upscaler.model import compile_training_model
-from upscaler.json import DataFrameEncoder
+from upscaler.json import PandasEncoder
 
 import math
 import numpy as np
@@ -106,18 +106,6 @@ if __name__== "__main__":
     param_file_path = model_loss_path + '/' + 'parameters.json'
     progress_file_path = model_loss_path + '/' + 'progress.json'
 
-    
-    ###########################################################
-    ## Saving train parameters file
-    ###########################################################
-    
-    parameters = vars(values)
-    parameters['model_prefix'] = model_prefix
-    
-    with open(param_file_path, 'w+') as param_file:
-        json.dump(parameters, param_file, indent = 4)
-
-
     ###########################################################
     ## Loading the data
     ###########################################################
@@ -131,6 +119,20 @@ if __name__== "__main__":
     )
     
     images_train, images_test = split_images_train_test(images_all, train_test_ratio)
+
+    
+    ###########################################################
+    ## Saving train parameters file
+    ###########################################################
+    
+    parameters = vars(values)
+    parameters['model_prefix'] = model_prefix
+    parameters['train_set'] = images_train.filename
+    parameters['test_set'] = images_test.filename
+    
+    with open(param_file_path, 'w+') as param_file:
+        json.dump(parameters, param_file, indent = 4, cls = PandasEncoder)
+
     
     ###########################################################
     ## Setting up the model for training
@@ -161,10 +163,8 @@ if __name__== "__main__":
     ###########################################################
     
     agg_loss = 0.0
-    prev_loss = -1
     loss_update_rate = 0.01
     best_loss = np.inf
-    loss_decreases = False
     
     # progress log initialisation
     progress = {
@@ -199,17 +199,14 @@ if __name__== "__main__":
 
         image_batch_hr, image_batch_lr = convert_imagesdf_to_arrays(batch_df)
         loss = upscaler_training_model.train_on_batch(image_batch_lr, image_batch_hr)
-
-        # check if aggregated loss started to decrease, only then we start looking for the best model
-        prev_loss = agg_loss
+        
         agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
-        loss_decreases = loss_decreases or (prev_loss > agg_loss)
 
         with open(loss_file_name, 'a') as loss_file:
             loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss) )
         
         # update progress log with best model
-        if loss_decreases and agg_loss < best_loss:
+        if b > values.model_save_freq and agg_loss < best_loss:
             best_loss = agg_loss
 
             upscaler.save(model_file_name_best)
@@ -226,7 +223,7 @@ if __name__== "__main__":
             progress['best_model'] = best_model_progress
             
             with open(progress_file_path, 'w+') as progress_file:
-                json.dump(progress, progress_file, indent = 4, cls = DataFrameEncoder)
+                json.dump(progress, progress_file, indent = 4, cls = PandasEncoder)
 
         # saving a next state of the model
         if(b % values.model_save_freq == 0):
@@ -244,7 +241,7 @@ if __name__== "__main__":
             progress['saved_models'] = saved_models
             
             with open(progress_file_path, 'w+') as progress_file:
-                json.dump(progress, progress_file, indent = 4, cls = DataFrameEncoder)
+                json.dump(progress, progress_file, indent = 4, cls = PandasEncoder)
             
             save_images_predicted(images_train, upscaler, 0, 10, image_path, model_prefix + '_train', b, quality = 95)
             save_images_predicted(images_test, upscaler, 0, 10, image_path, model_prefix + '_test', b, quality = 95)
