@@ -2,7 +2,7 @@ from upscaler.data import load_images_from_dir_and_downscale, split_images_train
 from upscaler.data import select_random_rows, convert_imagesdf_to_arrays, convert_array_to_image
 from upscaler.data import save_images_orig, save_images_predicted
 from upscaler.data import save_images_orig_png, save_images_predicted_png
-from upscaler.model import make_upscaler_skip_con, make_upscaler_orig
+from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
 from upscaler.model import compile_training_model
 from upscaler.json import DataFrameEncoder
@@ -56,8 +56,8 @@ if __name__== "__main__":
     ###########################################################
     
     downscale_factor = values.downscale_factor
-    upscale_times = int(math.log(downscale_factor,2))
-    output_image_shape = (1920,1080,3)
+    # upscale_times = int(math.log(downscale_factor,2))
+    output_image_shape = (1080, 1920,3)
     input_image_shape = (
         output_image_shape[0] // downscale_factor,
         output_image_shape[1] // downscale_factor,
@@ -138,9 +138,11 @@ if __name__== "__main__":
     
     # create the model instance
     if values.model == 'orig':
-        upscaler = make_upscaler_orig(input_image_shape, upscale_times)
+        upscaler = make_upscaler_orig(output_image_shape, downscale_factor)
     elif values.model == 'skip-con':
-        upscaler = make_upscaler_skip_con(input_image_shape, upscale_times)
+        upscaler = make_upscaler_skip_con(output_image_shape, downscale_factor)
+    elif values.model == 'unetish':
+        upscaler = make_upscaler_unetish(output_image_shape, downscale_factor)
     
     # create the loss
     if values.loss == 'vgg-only':

@@ -65,7 +65,6 @@ def select_random_rows(images_df, n = 1):
 
 def convert_array_to_image(array):
     array = np.uint8(np.around((array + 1) * 127.5))
-    array = array.swapaxes(0,1)
     
     return Image.fromarray(array)
 
@@ -73,13 +72,12 @@ def convert_array_to_image(array):
 def convert_image_to_array(img):
     array = np.array(img)
     array = (array / 127.5) - 1
-    array = array.swapaxes(0,1)
     
     return array
     
     
 def convert_image_series_to_array(image_series):
-    array = np.array([np.array(img).swapaxes(0,1) for img in image_series])
+    array = np.array([np.array(img) for img in image_series])
     array = (array / 127.5) - 1
     
     return array
@@ -101,13 +99,13 @@ def save_array_as_image(a, filename, **kwargs):
     a_img.save(filename, **kwargs)
 
     
-def rescale_save_array_as_image(a, filename, target_size = (1920, 1080), **kwargs):
+def rescale_save_array_as_image(a, filename, target_size = (1080, 1920), **kwargs):
     a_img = convert_array_to_image(a)
     a_img = a_img.resize(target_size, Image.BICUBIC)
     a_img.save(filename, **kwargs)
 
     
-def save_images_orig(images_df, idx_start, idx_stop, path, prefix, target_size = (1920, 1080), quality = 100):
+def save_images_orig(images_df, idx_start, idx_stop, path, prefix, target_size = (1080, 1920), quality = 95):
     
     idx_stop = min(idx_stop, images_df.shape[0])
     
@@ -120,7 +118,7 @@ def save_images_orig(images_df, idx_start, idx_stop, path, prefix, target_size =
         img.save(path + '/' + prefix + "_im%04d_orig.jpg" % idx, quality = quality)
 
 
-def save_images_predicted(images_df, upscaler, idx_start, idx_stop, path, prefix, batch, quality = 100):
+def save_images_predicted(images_df, upscaler, idx_start, idx_stop, path, prefix, batch, quality = 95):
     
     idx_stop = min(idx_stop, images_df.shape[0])
     
@@ -131,7 +129,7 @@ def save_images_predicted(images_df, upscaler, idx_start, idx_stop, path, prefix
 
 
                         
-def save_images_orig_png(images_df, idx_start, idx_stop, path, prefix, target_size = (1920, 1080)):
+def save_images_orig_png(images_df, idx_start, idx_stop, path, prefix, target_size = (1080, 1920)):
     
     idx_stop = min(idx_stop, images_df.shape[0])
     
