@@ -1,13 +1,14 @@
 import keras.backend as K
 from keras.applications.vgg19 import VGG19
 from keras.models import Model
-from keras.layers import Input, Lambda, Add, Concatenate
+from keras.layers import Input, Lambda, Add, Concatenate, Dropout, Multiply
 from keras.optimizers import Adam
 from keras.layers.core import Activation
 from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose, Cropping2D
 from keras.layers.advanced_activations import LeakyReLU, PReLU
 from keras.layers.normalization import BatchNormalization
 from keras.models import load_model
+import tensorflow as tf
 import math
 
 def residual_block(model, kernal_size, filters, strides):
@@ -181,24 +182,27 @@ def make_upscaler_skip_con(output_image_shape, upscale_factor = 4):
 
 
 
-def same_size_unetish_block(model, kernal_size, filters, strides, name):
+def same_size_unetish_block(model, kernal_size, filters, strides, name, dropout_rate=0.1):
     
     model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same", name = name+'/Conv2D')(model)
     model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2], name = name+'/PReLU')(model)
+    model = Dropout(rate=dropout_rate, name = name+'/Dropout')(model)
     
     return model
 
-def downsampling_unetish_block(model, kernel_size, filters, strides, name):
+def downsampling_unetish_block(model, kernel_size, filters, strides, name, dropout_rate=0.1):
     
     model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/Conv2D')(model)
     model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2], name = name+'/PReLU')(model)
+    model = Dropout(rate=dropout_rate, name = name+'/Dropout')(model)
     
     return model
 
-def upsampling_unetish_block(model, kernel_size, filters, strides, name):
+def upsampling_unetish_block(model, kernel_size, filters, strides, name, dropout_rate=0.1):
     
     model = Conv2DTranspose(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/Conv2DTrans')(model)
     model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2], name = name+'/PReLU')(model)
+    model = Dropout(rate=dropout_rate, name = name+'/Dropout')(model)
     
     return model
 
@@ -230,7 +234,7 @@ def concatenate_layers(input_layer, output_down, output_up, name):
 
 
 
-def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 2, initial_step_filter_count = 64): 
+def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 3, initial_step_filter_count = 32, dropout_rate=0.1): 
 
     upscale_times = int(math.log(upscale_factor,2)) + downscale_times
     input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
@@ -253,35 +257,48 @@ def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4,
             model = same_size_unetish_block(model, 3, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
         
         outputs.append(model)
-        model = downsampling_unetish_block(model, 3, step_filter_count, 2, "down/"+str(step)+"/down")
+        model = downsampling_unetish_block(model, 3, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
         step_filter_count = step_filter_count * 2
     
     
     # steps at the bottom of U
     for index in range(step_size):
-        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index))
+        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
     
     down_outputs_len = len(outputs)
     
     # upsampling steps
     for step in range(upscale_times):
-        model = upsampling_unetish_block(model, 3, step_filter_count, 2, "up/"+str(step)+"/up")
+        model = upsampling_unetish_block(model, 3, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
         
         if step < down_outputs_len:
             model = concatenate_layers(upscaler_input, outputs[down_outputs_len - step - 1], model, "up/"+str(step)+"/concat")
             step_filter_count = step_filter_count // 2
             
         for index in range(step_size):
-            model = same_size_unetish_block(model, 3, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index))
+            model = same_size_unetish_block(model, 3, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
 
     # adding upscaled original image
-    resized_input = (Lambda(lambda x: K.resize_images(x, upscale_factor, upscale_factor, "channels_last", "bilinear")))(upscaler_input)
-    model = Concatenate(axis = 3)([resized_input, model])
+    resized_input = (Lambda(lambda x: K.resize_images(x, upscale_factor, upscale_factor, "channels_last", "bilinear"), name = 'input_resize/resize'))(upscaler_input)
+    #resized_input = (Lambda(lambda x: tf.math.atanh(0.999 * x), name = 'input_resize/atanh'))(resized_input)
+    attention = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name = 'final/initial/attention')(resized_input)
     
-    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name = 'final/Conv2D')(model)
-    model = Activation('tanh', name = 'final/tanh')(model)
+    for step in range(3):
+        attention = Concatenate(axis = 3, name = 'final/'+str(step)+'/input_concat')([resized_input, attention])
+        attention = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name = 'final/'+str(step)+'/attention')(attention)
+        attention = Activation('sigmoid', name = 'final/'+str(step)+'/att_sigmoid')(attention)
+        
+        model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name = 'final/'+str(step)+'/Conv2D')(model)
+        att_model = Multiply(name = 'final/'+str(step)+'/att_Conv2D')([attention, model])
+        
+        model = Concatenate(axis = 3, name = 'final/'+str(step)+'/input_att_concat')([att_model, model])
+        model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name = 'final/'+str(step)+'/Conv2D_after_att')(model)
+        model = Activation('tanh', name = 'final/'+str(step)+'/tanh')(model)
+        
+        if step < 2:
+            model = Dropout(rate=dropout_rate, name = 'final/'+str(step)+'/Dropout')(model)
     
     
     # making sure the output is of the right shape

@@ -38,7 +38,7 @@ if __name__== "__main__":
     
     parser.add_argument('-l', '--loss', action='store', dest='loss', default='vgg-only', choices=['vgg-only','vgg-mae','vgg-mse'], help='Loss function to be used for the training')
     
-    parser.add_argument('-lw', '--non_vgg_loss_weight', action='store', dest='non_vgg_loss_weight', default='1.0', help='Weight of the loss other than VGG (if there is any)', type=float)
+    parser.add_argument('-lw', '--non_vgg_loss_weight', action='store', dest='non_vgg_loss_weight', default='0.001', help='Weight of the loss other than VGG (if there is any)', type=float)
     
     parser.add_argument('-msf', '--model_save_freq', action='store', dest='model_save_freq', default='500', help='How frequently a model should be saved? (number of batches)', type=int)
     
@@ -47,6 +47,8 @@ if __name__== "__main__":
     parser.add_argument('-nb', '--number_of_batches', action='store', dest='number_of_batches', default='40001', help='Number batches to be run', type=int)
     
     parser.add_argument('-d', '--downscale_factor', action='store', dest='downscale_factor', default='4', help='Downscale factor', type=int)
+    
+    parser.add_argument('-dr', '--dropout_rate', action='store', dest='dropout_rate', default='0.0', help='Dropout rate to be used (if supported by given model)', type=float)
     
     values = parser.parse_args()
     
@@ -144,7 +146,7 @@ if __name__== "__main__":
     elif values.model == 'skip-con':
         upscaler = make_upscaler_skip_con(output_image_shape, downscale_factor)
     elif values.model == 'unetish':
-        upscaler = make_upscaler_unetish(output_image_shape, downscale_factor)
+        upscaler = make_upscaler_unetish(output_image_shape, downscale_factor, dropout_rate=values.dropout_rate)
     
     # create the loss
     if values.loss == 'vgg-only':
@@ -156,7 +158,6 @@ if __name__== "__main__":
     
     # setting up the model for training
     upscaler_training_model = compile_training_model(upscaler, loss)
-    
     
     ###########################################################
     ## Model training
