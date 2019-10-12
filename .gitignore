@@ -110,4 +110,4 @@ venv.bak/
 images
 upscaling/trained_model
 upscaling/example_images
-
+upscaling/losses
