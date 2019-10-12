@@ -79,6 +79,7 @@ if __name__== "__main__":
         script_dirname = '.'
     input_dir = script_dirname + '/../images/' + values.image_input_dir
     model_save_dir = script_dirname + '/' + 'trained_model'
+    loss_save_dir = script_dirname + '/' + 'losses'
     images_dir = script_dirname + '/' + 'example_images'
     subdir = values.subdir
     #model_prefix = "orig_vgg-mse"
@@ -97,16 +98,21 @@ if __name__== "__main__":
     print("Generated images will be saved to: '" + image_path + "'")
 
     # where models and loss values will be saved
-    model_loss_path = model_save_dir + '/' + subdir + '/' + model_prefix
-    if not os.path.exists(model_loss_path):
-        os.makedirs(model_loss_path)
-    print("Loss values and trained models will be saved to: '" + model_loss_path + "'")
-    loss_file_name = model_loss_path + '/' + 'losses_upscaler_' + model_prefix + '.txt'
-    best_loss_file_name = model_loss_path + '/' + 'losses_upscaler_' + model_prefix + '_best.txt'
-    model_file_name_tpl = model_loss_path + '/' + 'model_upscaler_' + model_prefix + '_%06db.h5'
-    model_file_name_best = model_loss_path + '/' + 'model_upscaler_' + model_prefix + '_best.h5'
-    param_file_path = model_loss_path + '/' + 'parameters.json'
-    progress_file_path = model_loss_path + '/' + 'progress.json'
+    model_path = model_save_dir + '/' + subdir + '/' + model_prefix
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
+    print("Trained models will be saved to: '" + model_path + "'")
+    model_file_name_tpl = model_path + '/' + 'model_upscaler_' + model_prefix + '_%06db.h5'
+    model_file_name_best = model_path + '/' + 'model_upscaler_' + model_prefix + '_best.h5'
+    
+    loss_path = loss_save_dir + '/' + subdir + '/' + model_prefix
+    if not os.path.exists(loss_path):
+        os.makedirs(loss_path)
+    print("Loss values and training parameters will be saved to: '" + loss_path + "'")
+    loss_file_name = loss_path + '/' + 'losses_upscaler_' + model_prefix + '.txt'
+    best_loss_file_name = loss_path + '/' + 'losses_upscaler_' + model_prefix + '_best.txt'
+    param_file_path = loss_path + '/' + 'parameters.json'
+    progress_file_path = loss_path + '/' + 'progress.json'
 
     ###########################################################
     ## Loading the data
