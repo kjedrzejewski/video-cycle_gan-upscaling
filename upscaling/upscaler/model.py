@@ -236,6 +236,16 @@ def concatenate_layers(input_layer, output_down, output_up, name):
     return model
 
 
+def sum_layers(input_layer, output_down, output_up, name):
+    
+    crop_shapes = find_crop_shape(input_layer, output_down, output_up)
+    
+    model = Cropping2D(cropping=crop_shapes, name = name+"/Cropping2D")(output_up)
+    model = Add(name = name+"/Add")([output_down, model])
+    
+    return model
+
+
 
 def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 5, initial_step_filter_count = 32, dropout_rate=0.1): 
 
@@ -307,6 +317,84 @@ def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4,
 
 
 
+
+
+def make_upscaler_unetish_add(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 5, initial_step_filter_count = 48, dropout_rate=0.1): 
+
+    upscale_times = int(math.log(upscale_factor,2)) + downscale_times
+    input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
+    
+    upscaler_input = Input(shape = input_image_shape, name = 'input')
+    
+    model = Conv2D(filters = initial_step_filter_count, kernel_size = 9, strides = 1, padding = "same", name = 'initial/Conv2D')(upscaler_input)
+    model = PReLU(shared_axes=[1,2], name = 'initial/PReLU')(model)
+
+    upsc_model = model
+    
+    
+    outputs = []
+    step_filter_count = initial_step_filter_count
+    
+    # downsampling steps
+    for step in range(downscale_times):
+        
+        for index in range(step_size):
+            model = same_size_unetish_block(model, 3, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
+        
+        outputs.append(model)
+        model = downsampling_unetish_block(model, 3, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
+        step_filter_count = step_filter_count * 2
+    
+    
+    # steps at the bottom of U
+    for index in range(step_size):
+        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+    
+    step_filter_count = step_filter_count // 2
+    
+    down_outputs_len = len(outputs)
+    
+    # upsampling steps
+    for step in range(upscale_times):
+        model = upsampling_unetish_block(model, 3, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
+        
+        if step < down_outputs_len:
+            model = sum_layers(upscaler_input, outputs[down_outputs_len - step - 1], model, "up/"+str(step)+"/add")
+            step_filter_count = step_filter_count // 2
+            
+        for index in range(step_size):
+            model = same_size_unetish_block(model, 3, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+    
+
+    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)
+    model = Activation('tanh')(model)
+    
+    # making sure the output is of the right shape
+    
+    # to extract the output shape
+    output_shape = Model(inputs = upscaler_input, outputs = model).output_shape
+
+    height_diff = output_shape[1] - output_image_shape[0]
+    width_diff  = output_shape[2] - output_image_shape[1]
+    
+    top_crop = height_diff // 2
+    left_crop = width_diff // 2
+    
+    crop_shapes = ((top_crop, height_diff - top_crop),(left_crop, width_diff - left_crop))
+    
+    model = Cropping2D(cropping=crop_shapes, name = 'prefinal/Cropping2D')(model)
+    
+    resized_input = (Lambda(lambda x: K.resize_images(x, upscale_factor, upscale_factor, "channels_last", "bilinear"), name = 'final/input_resize/resize'))(upscaler_input)
+    resized_input = (Lambda(lambda x: tf.math.atanh(0.99999 * x), name = 'final/input_resize/atanh'))(resized_input)
+    
+    model = sum_layers(upscaler_input, model, resized_input, "final/concat")
+    
+    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)
+    model = Activation('tanh')(model)
+    
+    upscaler_model = Model(inputs = upscaler_input, outputs = model)
+
+    return upscaler_model
 
 
 

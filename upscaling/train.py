@@ -2,7 +2,7 @@ from upscaler.data import load_images_from_dir_and_downscale, split_images_train
 from upscaler.data import select_random_rows, convert_imagesdf_to_arrays, convert_array_to_image
 from upscaler.data import save_images_orig, save_images_predicted
 from upscaler.data import save_images_orig_png, save_images_predicted_png
-from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish
+from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish, make_upscaler_unetish_add
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
 from upscaler.model import compile_training_model
 from upscaler.json import PandasEncoder
@@ -34,7 +34,7 @@ if __name__== "__main__":
     
     parser.add_argument('-tr', '--train_test_ratio', action='store', dest='train_test_ratio', default='0.95', help='Ratio of splitting images into the test and train sets', type=float)
     
-    parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con','unetish'], help='Model to be used')
+    parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con','unetish','unetish-add'], help='Model to be used')
     
     parser.add_argument('-l', '--loss', action='store', dest='loss', default='vgg-only', choices=['vgg-only','vgg-mae','vgg-mse'], help='Loss function to be used for the training')
     
@@ -153,6 +153,11 @@ if __name__== "__main__":
         upscaler = make_upscaler_skip_con(output_image_shape, downscale_factor)
     elif values.model == 'unetish':
         upscaler = make_upscaler_unetish(output_image_shape, downscale_factor, dropout_rate=values.dropout_rate)
+    elif values.model == 'unetish-add':
+        upscaler = make_upscaler_unetish_add(output_image_shape, downscale_factor, dropout_rate=values.dropout_rate)
+    
+    #upscaler.summary(line_length=200)
+    #sys.exit(0)
     
     # create the loss
     if values.loss == 'vgg-only':
