@@ -2,10 +2,11 @@ from upscaler.data import load_images_from_dir_and_downscale, split_images_train
 from upscaler.data import select_random_rows, convert_imagesdf_to_arrays, convert_array_to_image
 from upscaler.data import save_images_orig, save_images_predicted
 from upscaler.data import save_images_orig_png, save_images_predicted_png
-from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish, make_upscaler_unetish_add
+from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish, make_upscaler_unetish_add, make_upscaler_attention
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS
 from upscaler.model import compile_training_model
 from upscaler.json import PandasEncoder
+from keras.utils.vis_utils import plot_model
 
 import math
 import numpy as np
@@ -34,7 +35,7 @@ if __name__== "__main__":
     
     parser.add_argument('-tr', '--train_test_ratio', action='store', dest='train_test_ratio', default='0.95', help='Ratio of splitting images into the test and train sets', type=float)
     
-    parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con','unetish','unetish-add'], help='Model to be used')
+    parser.add_argument('-m', '--model', action='store', dest='model', default='orig', choices=['orig','skip-con','resnet-att','unetish','unetish-add'], help='Model to be used')
     
     parser.add_argument('-l', '--loss', action='store', dest='loss', default='vgg-only', choices=['vgg-only','vgg-mae','vgg-mse'], help='Loss function to be used for the training')
     
@@ -48,6 +49,8 @@ if __name__== "__main__":
     
     parser.add_argument('-d', '--downscale_factor', action='store', dest='downscale_factor', default='4', help='Downscale factor', type=int)
     
+    parser.add_argument('-ks', '--kernel_size', action='store', dest='kernel_size', default='5', help='Kernel size', type=int)
+    
     parser.add_argument('-dr', '--dropout_rate', action='store', dest='dropout_rate', default='0.0', help='Dropout rate to be used (if supported by given model)', type=float)
     
     values = parser.parse_args()
@@ -58,6 +61,7 @@ if __name__== "__main__":
     ###########################################################
     
     downscale_factor = values.downscale_factor
+    kernel_size = values.kernel_size
     # upscale_times = int(math.log(downscale_factor,2))
     output_image_shape = (1080, 1920,3)
     input_image_shape = (
@@ -148,14 +152,17 @@ if __name__== "__main__":
     
     # create the model instance
     if values.model == 'orig':
-        upscaler = make_upscaler_orig(output_image_shape, downscale_factor)
+        upscaler = make_upscaler_orig(output_image_shape, kernel_size = kernel_size, upscale_factor = downscale_factor)
     elif values.model == 'skip-con':
-        upscaler = make_upscaler_skip_con(output_image_shape, downscale_factor)
+        upscaler = make_upscaler_skip_con(output_image_shape, kernel_size = kernel_size, upscale_factor = downscale_factor)
+    elif values.model == 'resnet-att':
+        upscaler = make_upscaler_attention(output_image_shape, kernel_size = kernel_size, upscale_factor = downscale_factor)
     elif values.model == 'unetish':
-        upscaler = make_upscaler_unetish(output_image_shape, downscale_factor, dropout_rate=values.dropout_rate)
+        upscaler = make_upscaler_unetish(output_image_shape, kernel_size = kernel_size, upscale_factor = downscale_factor, dropout_rate=values.dropout_rate)
     elif values.model == 'unetish-add':
-        upscaler = make_upscaler_unetish_add(output_image_shape, downscale_factor, dropout_rate=values.dropout_rate)
+        upscaler = make_upscaler_unetish_add(output_image_shape, kernel_size = kernel_size, upscale_factor = downscale_factor, dropout_rate=values.dropout_rate)
     
+    plot_model(upscaler, to_file=loss_path+'/model_plot.png', show_shapes=True, show_layer_names=True)
     #upscaler.summary(line_length=200)
     #sys.exit(0)
     

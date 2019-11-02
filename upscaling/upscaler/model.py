@@ -11,28 +11,49 @@ from keras.models import load_model
 import tensorflow as tf
 import math
 
-def residual_block(model, kernal_size, filters, strides):
+def residual_block(model, kernel_size, filters, strides, name=""):
     
     gen = model
     
-    model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
-    model = BatchNormalization()(model)
-    model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2])(model)
-    model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
-    model = BatchNormalization()(model)
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/conv_pre')(model)
+    model = BatchNormalization(name = name+'/batch_norm_pre')(model)
+    model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2], name = name+'/prelu')(model)
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/conv_post')(model)
+    model = BatchNormalization(name = name+'/batch_norm_post')(model)
         
-    model = Add()([gen, model])
+    model = Add(name = name+'/final_add')([gen, model])
     
     return model
 
 
-def residual_block_simple(model, kernal_size, filters, strides):
+def residual_block_attention(model, input_, kernel_size, filters, strides, batch_norm=True, name=""):
     
     gen = model
     
-    model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
+    attention = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/attention')(input_)
+    attention = Activation('sigmoid', name = name+'/attention_sigmoid')(attention)
+    model = Multiply(name = name+'/attention_multiply')([attention, model])
+    
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/conv_pre')(model)
+    if batch_norm:
+        model = BatchNormalization(name = name+'/batch_norm_pre')(model)
+    model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2], name = name+'/prelu')(model)
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/conv_post')(model)
+    if batch_norm:
+        model = BatchNormalization(name = name+'/batch_norm_post')(model)
+        
+    model = Add(name = name+'/final_add')([gen, model])
+    
+    return model
+
+
+def residual_block_simple(model, kernel_size, filters, strides):
+    
+    gen = model
+    
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same")(model)
     model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2])(model)
-    model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same")(model)
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same")(model)
         
     model = Add()([gen, model])
     
@@ -45,10 +66,33 @@ def downsampling_block(model, kernel_size, filters, strides):
     
     return model
 
-def upsampling_block(model, kernel_size, filters, strides):
+def upsampling_block(model, kernel_size, filters, strides, name=""):
     
-    model = Conv2DTranspose(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same")(model)
-    model = LeakyReLU(alpha = 0.2)(model)
+    model = Conv2DTranspose(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same",name=name+"/conv_transp")(model)
+    model = LeakyReLU(alpha = 0.2, name = name + "/leaky_relu")(model)
+    
+    return model
+
+
+def upsampling_block_attention(model, input_, scale, kernel_size, filters, name=""):
+    
+    input_upscaled_nearest = (Lambda(lambda x: K.resize_images(x, scale//2, scale//2, "channels_last", "nearest"), name= name + '/nearest'))(input_)
+    input_upscaled_bilinear = (Lambda(lambda x: K.resize_images(x, scale//2, scale//2, "channels_last", "bilinear"), name= name + '/resize_bilinear'))(input_)
+    input_upscaled = Concatenate(name = name + '/upscaled_concat')([input_upscaled_nearest, input_upscaled_bilinear])
+    
+    model_cnt = Model(inputs = input_, outputs = model).output_shape[3]
+    
+    attention = Conv2D(filters = model_cnt, kernel_size = kernel_size, strides = 1, padding = "same",name = name + "/attention")(input_upscaled)
+    attention = Activation('sigmoid', name = name +'/attention_sigmoid')(attention)
+    
+    model = Multiply(name = name + '/attention_multiply')([attention, model])
+    model = Conv2DTranspose(filters = filters, kernel_size = kernel_size, strides = 2, padding = "same", name = name + "/conv_transp")(model)
+    model = LeakyReLU(alpha = 0.2, name = name + "/leaky_relu")(model)
+    
+    to_add_input = (Lambda(lambda x: tf.math.atanh(0.99999 * x), name =  name + "/to_add_input_atanh"))(input_)
+    to_add_input = Conv2DTranspose(filters = filters, kernel_size = scale + 1, strides = scale, padding = "same", name = name + "/to_add_input_conv_transp")(to_add_input)
+    
+    model = Add(name = name + '/add_input')([model, to_add_input])
     
     return model
 
@@ -110,31 +154,31 @@ class VGG_MAE_LOSS(object):
 
 
 
-def make_upscaler_orig(output_image_shape, upscale_factor = 4):
+def make_upscaler_orig(output_image_shape, kernel_size = 5, filters = 64, upscale_factor = 4, res_block_num=16):
     
     input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
         
     upscale_times = int(math.log(upscale_factor,2))
     
-    upscaler_input = Input(shape = input_image_shape)
+    upscaler_input = Input(shape = input_image_shape, name="initial/input")
 
-    model = Conv2D(filters = 64, kernel_size = 9, strides = 1, padding = "same")(upscaler_input)
-    model = PReLU(shared_axes=[1,2])(model)
+    model = Conv2D(filters = filters, kernel_size = 9, strides = 1, padding = "same", name="initial/conv")(upscaler_input)
+    model = PReLU(shared_axes=[1,2], name="initial/prelu")(model)
 
     upsc_model = model
 
-    for index in range(16):
-        model = residual_block(model, 3, 64, 1)
+    for index in range(res_block_num):
+        model = residual_block(model, kernel_size, filters, 1, name="res_block/"+str(index))
 
-    model = Conv2D(filters = 64, kernel_size = 3, strides = 1, padding = "same")(model)
-    model = BatchNormalization()(model)
-    model = Add()([upsc_model, model])
+    model = Conv2D(filters = 64, kernel_size = kernel_size, strides = 1, padding = "same", name='prefinal/conv2d')(model)
+    model = BatchNormalization(name='prefinal/batch_norm')(model)
+    model = Add(name='prefinal/tanh')([upsc_model, model])
 
     for index in range(upscale_times):
-        model = upsampling_block(model, 3, 256, 2)
+        model = upsampling_block(model, kernel_size, 256, 2, name='upscaling/'+str(index)+'/block')
 
-    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)
-    model = Activation('tanh')(model)
+    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name='final/conv')(model)
+    model = Activation('tanh', name='final/tanh')(model)
 
     upscaler_model = Model(inputs = upscaler_input, outputs = model)
 
@@ -142,7 +186,40 @@ def make_upscaler_orig(output_image_shape, upscale_factor = 4):
 
 
 
-def make_upscaler_skip_con(output_image_shape, upscale_factor = 4):
+def make_upscaler_attention(output_image_shape, kernel_size = 5, filters = 64, upscale_factor = 4, res_block_num=16):
+    
+    input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
+    
+    upscale_times = int(math.log(upscale_factor,2))
+    
+    upscaler_input = Input(shape = input_image_shape, name="initial/input")
+
+    model = Conv2D(filters = filters, kernel_size = 9, strides = 1, padding = "same", name="initial/conv")(upscaler_input)
+    model = PReLU(shared_axes=[1,2], name="initial/prelu")(model)
+
+    upsc_model = model
+
+    for index in range(res_block_num):
+        model = residual_block_attention(model, upscaler_input, kernel_size, filters, 1, name="res_block/"+str(index))
+
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = 1, padding = "same", name="after_res/conv")(model)
+    model = BatchNormalization(name="after_res/batch_norm")(model)
+    model = Add(name="after_res/add")([upsc_model, model])
+    
+    for index in range(upscale_times):
+        scale = 2 ** (index + 1)
+        model = upsampling_block_attention(model, upscaler_input, scale, kernel_size, 128, name='upscaling/'+str(index)+'/block')
+
+    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name='final/conv')(model)
+    model = Activation('tanh', name='final/tanh')(model)
+
+    upscaler_model = Model(inputs = upscaler_input, outputs = model)
+
+    return upscaler_model
+
+
+
+def make_upscaler_skip_con(output_image_shape, kernel_size = 5, filters = 64, upscale_factor = 4):
     
     input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
     
@@ -156,7 +233,7 @@ def make_upscaler_skip_con(output_image_shape, upscale_factor = 4):
     upsc_model = model
 
     for index in range(16):
-        model = residual_block(model, 3, 64, 1)
+        model = residual_block(model, kernel_size, filters, 1)
 
     model = Conv2D(filters = 64, kernel_size = 3, strides = 1, padding = "same")(model)
     model = BatchNormalization()(model)
@@ -182,9 +259,9 @@ def make_upscaler_skip_con(output_image_shape, upscale_factor = 4):
 
 
 
-def same_size_unetish_block(model, kernal_size, filters, strides, name, dropout_rate=0.1):
+def same_size_unetish_block(model, kernel_size, filters, strides, name, dropout_rate=0.1):
     
-    model = Conv2D(filters = filters, kernel_size = kernal_size, strides = strides, padding = "same", name = name+'/Conv2D')(model)
+    model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/Conv2D')(model)
     model = BatchNormalization()(model)
     model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2], name = name+'/PReLU')(model)
     model = Dropout(rate=dropout_rate, name = name+'/Dropout')(model)
@@ -247,7 +324,7 @@ def sum_layers(input_layer, output_down, output_up, name):
 
 
 
-def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 5, initial_step_filter_count = 32, dropout_rate=0.1): 
+def make_upscaler_unetish(output_image_shape, kernel_size = 5, upscale_factor = 4, step_size = 4, downscale_times = 5, initial_step_filter_count = 32, dropout_rate=0.1): 
 
     upscale_times = int(math.log(upscale_factor,2)) + downscale_times
     input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
@@ -267,30 +344,30 @@ def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4,
     for step in range(downscale_times):
         
         for index in range(step_size):
-            model = same_size_unetish_block(model, 3, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
+            model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
         
         outputs.append(model)
-        model = downsampling_unetish_block(model, 3, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
+        model = downsampling_unetish_block(model, kernel_size, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
         step_filter_count = step_filter_count * 2
     
     
     # steps at the bottom of U
     for index in range(step_size):
-        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+        model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
     
     down_outputs_len = len(outputs)
     
     # upsampling steps
     for step in range(upscale_times):
-        model = upsampling_unetish_block(model, 3, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
+        model = upsampling_unetish_block(model, kernel_size, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
         
         if step < down_outputs_len:
             model = concatenate_layers(upscaler_input, outputs[down_outputs_len - step - 1], model, "up/"+str(step)+"/concat")
             step_filter_count = step_filter_count // 2
             
         for index in range(step_size):
-            model = same_size_unetish_block(model, 3, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+            model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
 
     model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)
@@ -319,7 +396,7 @@ def make_upscaler_unetish(output_image_shape, upscale_factor = 4, step_size = 4,
 
 
 
-def make_upscaler_unetish_add(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 5, initial_step_filter_count = 48, dropout_rate=0.1): 
+def make_upscaler_unetish_add(output_image_shape, kernel_size = 5, upscale_factor = 4, step_size = 4, downscale_times = 5, initial_step_filter_count = 48, dropout_rate=0.1): 
 
     upscale_times = int(math.log(upscale_factor,2)) + downscale_times
     input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
@@ -339,16 +416,16 @@ def make_upscaler_unetish_add(output_image_shape, upscale_factor = 4, step_size 
     for step in range(downscale_times):
         
         for index in range(step_size):
-            model = same_size_unetish_block(model, 3, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
+            model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
         
         outputs.append(model)
-        model = downsampling_unetish_block(model, 3, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
+        model = downsampling_unetish_block(model, kernel_size, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
         step_filter_count = step_filter_count * 2
     
     
     # steps at the bottom of U
     for index in range(step_size):
-        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+        model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
     step_filter_count = step_filter_count // 2
     
@@ -356,14 +433,14 @@ def make_upscaler_unetish_add(output_image_shape, upscale_factor = 4, step_size 
     
     # upsampling steps
     for step in range(upscale_times):
-        model = upsampling_unetish_block(model, 3, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
+        model = upsampling_unetish_block(model, kernel_size, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
         
         if step < down_outputs_len:
             model = sum_layers(upscaler_input, outputs[down_outputs_len - step - 1], model, "up/"+str(step)+"/add")
             step_filter_count = step_filter_count // 2
             
         for index in range(step_size):
-            model = same_size_unetish_block(model, 3, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+            model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
 
     model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same")(model)
@@ -420,7 +497,7 @@ def make_upscaler_unetish_add(output_image_shape, upscale_factor = 4, step_size 
 
 
 
-def make_upscaler_unetish_complex(output_image_shape, upscale_factor = 4, step_size = 4, downscale_times = 3, initial_step_filter_count = 32, dropout_rate=0.1): 
+def make_upscaler_unetish_complex(output_image_shape, kernel_size = 5, upscale_factor = 4, step_size = 4, downscale_times = 3, initial_step_filter_count = 32, dropout_rate=0.1): 
 
     upscale_times = int(math.log(upscale_factor,2)) + downscale_times
     input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
@@ -440,30 +517,30 @@ def make_upscaler_unetish_complex(output_image_shape, upscale_factor = 4, step_s
     for step in range(downscale_times):
         
         for index in range(step_size):
-            model = same_size_unetish_block(model, 3, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
+            model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "down/"+str(step)+"/same/"+str(index))
         
         outputs.append(model)
-        model = downsampling_unetish_block(model, 3, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
+        model = downsampling_unetish_block(model, kernel_size, step_filter_count, 2, "down/"+str(step)+"/down", dropout_rate=dropout_rate)
         step_filter_count = step_filter_count * 2
     
     
     # steps at the bottom of U
     for index in range(step_size):
-        model = same_size_unetish_block(model, 3, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+        model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "bottom/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
     
     down_outputs_len = len(outputs)
     
     # upsampling steps
     for step in range(upscale_times):
-        model = upsampling_unetish_block(model, 3, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
+        model = upsampling_unetish_block(model, kernel_size, step_filter_count, 2, "up/"+str(step)+"/up", dropout_rate=dropout_rate)
         
         if step < down_outputs_len:
             model = concatenate_layers(upscaler_input, outputs[down_outputs_len - step - 1], model, "up/"+str(step)+"/concat")
             step_filter_count = step_filter_count // 2
             
         for index in range(step_size):
-            model = same_size_unetish_block(model, 3, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
+            model = same_size_unetish_block(model, kernel_size, step_filter_count, 1, "up/"+str(step)+"/same/"+str(index), dropout_rate=dropout_rate)
     
 
     # adding upscaled original image
