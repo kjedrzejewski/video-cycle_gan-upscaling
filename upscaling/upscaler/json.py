@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+import numpy as np
 
 class PandasEncoder(json.JSONEncoder):
 
@@ -9,5 +10,8 @@ class PandasEncoder(json.JSONEncoder):
         
         if isinstance(obj, pd.Series):
             return obj.tolist()
+        
+        if isinstance(obj, np.integer):
+            return int(obj)
         
         return json.JSONEncoder.default(self, obj)

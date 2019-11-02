@@ -27,6 +27,7 @@ def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func =
         path = os.path.join(dir_loc,f)
         
         img_hr = Image.open(path).copy()
+        img_hr = img_hr.convert('RGB')
         
         lr_width = img_hr.width // downscale_factor
         lr_height = img_hr.height // downscale_factor
@@ -42,7 +43,88 @@ def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func =
     return files
 
 
-def split_images_train_test(images_df, train_test_ratio = 0.8):
+def load_images_from_dir(dir_loc, ext, limit = np.inf, prog_func = indentity_func, min_shape = (256, 256), desc = "Loading files"):
+    
+    file_list = os.listdir(dir_loc)
+    file_list = sorted(list(filter(lambda s: s.endswith(ext), file_list)))
+    limit = min(len(file_list), limit)
+    file_list = file_list[0:limit]
+    
+    files = pd.DataFrame({
+        'filename': [],
+        'image_size': [],
+        'image_hr': []
+    })
+    for f in prog_func(file_list, desc = desc):
+        path = os.path.join(dir_loc,f)
+        
+        img_hr = Image.open(path).copy()
+        img_hr = img_hr.convert('RGB')
+        img_shape = img_hr.size
+        
+        if img_shape[0] >= min_shape[0] and img_shape[1] >= min_shape[1]:
+            files = files.append({
+                'filename': f,
+                'image_size': img_hr.size,
+                'image_hr': img_hr
+            }, ignore_index=True)
+            
+    return files
+
+
+def crop_images(hq_images, prog_func = indentity_func, target_shape = (256, 256), downscale_ratio = np.nan, seed = np.nan, desc = "Processing files"):
+    
+    if not np.isnan(seed):
+        rand_state = np.random.get_state()
+        np.random.seed(seed)
+    
+    cropped = []
+    crop_shapes = []
+    if not np.isnan(downscale_ratio):
+        img_crop_lr = []
+    
+    for id, img in prog_func(hq_images.iterrows(), desc = desc):
+
+        img_hr = img['image_hr']         
+        img_shape = img_hr.size
+        
+        width_range  = img_hr.size[0] - target_shape[0]
+        height_range = img_hr.size[1] - target_shape[1]
+            
+        left = np.random.randint(0, width_range + 1, 1)[0]
+        top  = np.random.randint(0, height_range + 1, 1)[0]
+        
+        crop_shape = (left, top, left + target_shape[0], top + target_shape[1])
+        img_cropped = img_hr.crop(crop_shape)
+
+        cropped.append(img_cropped)
+        crop_shapes.append(crop_shape)
+        
+        if not np.isnan(downscale_ratio):
+            img_lr = img_cropped.resize((target_shape[0] // 4, target_shape[1] // 4), Image.LANCZOS)
+            img_crop_lr.append(img_lr)
+    
+    res = hq_images.assign(
+        crop_shape = crop_shapes,
+        image_cropped = cropped
+    )
+        
+    if not np.isnan(downscale_ratio):
+        res = res.assign(
+            image_cropped_lr = img_crop_lr
+        )
+    
+    if not np.isnan(seed):
+        np.random.set_state(rand_state)
+    
+    return res
+
+
+def split_images_train_test(images_df, train_test_ratio = 0.8, seed = np.nan):
+    
+    if not np.isnan(seed):
+        rand_state = np.random.get_state()
+        np.random.seed(seed)
     
     number_of_images = images_df.shape[0]
     number_of_train_images = int(round(number_of_images * train_test_ratio))
@@ -52,16 +134,26 @@ def split_images_train_test(images_df, train_test_ratio = 0.8):
     images_df_train = images_df.iloc[train_ids].reset_index(drop=True)
     images_df_test  = images_df[~images_df.index.isin(train_ids)].reset_index(drop=True)
     
+    if not np.isnan(seed):
+        np.random.set_state(rand_state)
+    
     return images_df_train, images_df_test
 
 
 
 
 
-def select_random_rows(images_df, n = 1):
-    row_indices = np.random.randint(0, images_df.shape[0], size=n)
+def select_random_rows(images_df, n = 1, seed = np.nan):
+    if not np.isnan(seed):
+        rand_state = np.random.get_state()
+        np.random.seed(seed)
     
-    return images_df.iloc[row_indices]
+    row_indices = np.random.randint(0, images_df.shape[0], size=n)
+
+    if not np.isnan(seed):
+        np.random.set_state(rand_state)
+    
+    return images_df.iloc[row_indices].reset_index(drop=True)
 
 
 
@@ -156,3 +248,24 @@ def save_images_predicted_png(images_df, upscaler, idx_start, idx_stop, path, pr
                         
 
 
+
+
+def save_img_orig(images_series, path, prefix, quality = 95):
+    
+    for idx, img in enumerate(images_series):
+        img.save(path + '/' + prefix + "_im%04d_orig.jpg" % idx, quality = quality)
+
+
+def save_img_resize(images_series, path, prefix, target_size = (1920, 1080), quality = 95):
+    
+    for idx, img in enumerate(images_series):
+        img = img.resize(target_size, Image.BICUBIC)
+        img.save(path + '/' + prefix + "_im%04d_lowres.jpg" % idx, quality = quality)
+
+        
+def save_img_predict(images_series, upscaler, path, prefix, batch, quality = 95):
+    
+    for idx, img in enumerate(images_series):
+        ex = convert_image_series_to_array([img])
+        ex = upscaler.predict(ex)[0]
+        save_array_as_image(ex, path + '/' + prefix + "_im%04d_upscaled_%06d.jpg" % (idx, batch), quality = quality)
