@@ -42,11 +42,11 @@ if __name__== "__main__":
     
     parser.add_argument('-msf', '--model_save_freq', action='store', dest='model_save_freq', default='500', help='How frequently a model should be saved? (number of batches)', type=int)
     
-    parser.add_argument('-bs', '--batch_size', action='store', dest='batch_size', default='30', help='Number of examples to be put in the batch', type=int)
+    parser.add_argument('-bs', '--batch_size', action='store', dest='batch_size', default='8', help='Number of examples to be put in the batch', type=int)
     
-    parser.add_argument('-oh', '--output_height', action='store', dest='output_height', default='256', help='Height of the output during training', type=int)
+    parser.add_argument('-oh', '--output_height', action='store', dest='output_height', default='512', help='Height of the output during training', type=int)
     
-    parser.add_argument('-ow', '--output_width', action='store', dest='output_width', default='256', help='Width of the output during training', type=int)
+    parser.add_argument('-ow', '--output_width', action='store', dest='output_width', default='512', help='Width of the output during training', type=int)
     
     parser.add_argument('-nb', '--number_of_batches', action='store', dest='number_of_batches', default='200001', help='Number batches to be run', type=int)
     
@@ -133,6 +133,7 @@ if __name__== "__main__":
     images_all = load_images_from_dir(
         input_dir,
         '.jpg',
+        min_shape = target_shape,
         limit = number_of_images,
         prog_func = tqdm
     )
@@ -223,7 +224,7 @@ if __name__== "__main__":
     for b in tqdm(range(values.number_of_batches), desc = 'Batch'):
 
         batch_df = select_random_rows(images_train, n=values.batch_size)
-        batch_df = crop_images(batch_df, downscale_ratio=downscale_factor)
+        batch_df = crop_images(batch_df, target_shape = target_shape, downscale_ratio=downscale_factor)
         
         image_batch_hr = convert_image_series_to_array(batch_df.image_cropped)
         image_batch_lr = convert_image_series_to_array(batch_df.image_cropped_lr)
