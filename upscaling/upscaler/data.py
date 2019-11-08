@@ -256,16 +256,16 @@ def save_img_orig(images_series, path, prefix, quality = 95):
         img.save(path + '/' + prefix + "_im%04d_orig.jpg" % idx, quality = quality)
 
 
-def save_img_resize(images_series, path, prefix, target_size = (1920, 1080), quality = 95):
+def save_img_resize(images_series, path, prefix, sufix = '', target_size = (1080, 1920), quality = 95):
     
     for idx, img in enumerate(images_series):
         img = img.resize(target_size, Image.BICUBIC)
-        img.save(path + '/' + prefix + "_im%04d_lowres.jpg" % idx, quality = quality)
+        img.save(path + '/' + prefix + "_im%04d_lowres%s.jpg" % (idx, sufix), quality = quality)
 
         
-def save_img_predict(images_series, upscaler, path, prefix, batch, quality = 95):
+def save_img_predict(images_series, upscaler, path, prefix, batch, sufix = '', quality = 95):
     
     for idx, img in enumerate(images_series):
         ex = convert_image_series_to_array([img])
         ex = upscaler.predict(ex)[0]
-        save_array_as_image(ex, path + '/' + prefix + "_im%04d_upscaled_%06d.jpg" % (idx, batch), quality = quality)
+        save_array_as_image(ex, path + '/' + prefix + "_im%04d_upscaled_%06d%s.jpg" % (idx, batch, sufix), quality = quality)
