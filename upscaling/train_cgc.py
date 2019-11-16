@@ -1,4 +1,4 @@
-from upscaler.data import load_images_from_dir, split_images_train_test
+from upscaler.data import load_images_from_dir, split_images_train_test, downscale_images
 from upscaler.data import select_random_rows, convert_image_series_to_array, convert_array_to_image
 from upscaler.data import save_img_orig, save_img_resize, save_img_predict
 from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish, make_upscaler_unetish_add, make_upscaler_attention
@@ -139,7 +139,12 @@ if __name__== "__main__":
         limit = number_of_images,
         prog_func = tqdm
     )
-    images_fullhd = images_fullhd.rename(columns={'image_hr': 'fullhd'})
+    images_fullhd = downscale_images(
+        images_fullhd,
+        prog_func = tqdm,
+        downscale_ratio = downscale_factor
+    )
+    images_fullhd = images_fullhd.rename(columns={'image_hr': 'fullhd', 'downscaled' : 'scaled'})
     
     images_1gen = load_images_from_dir(
         input_dir_1gen,
@@ -226,25 +231,29 @@ if __name__== "__main__":
         'batch': [],
         'loss_1gen': [],
         'loss_2gen': [],
+        'loss_scaled': [],
         'agg_loss': [],
         'path': []
     })
     
     # loss logs initialisations
     with open(loss_file_name, 'w+') as loss_file:
-        loss_file.write('batch\tloss_1gen\tloss_2gen\tagg_loss\n')
+        loss_file.write('batch\tloss_1gen\tloss_2gen\tloss_scaled\tagg_loss\n')
 
     with open(best_loss_file_name, 'w+') as loss_file:
-        loss_file.write('batch\tloss_1gen\tloss_2gen\tagg_loss\n')
+        loss_file.write('batch\tloss_1gen\tloss_2genn\tloss_scaled\tagg_loss\n')
     
     
     # saving lowres and highres examples
-    save_img_orig(images_train.fullhd[0:10], image_path, model_prefix + '_train', quality = 95)
-    save_img_resize(images_train.gen1[0:10], image_path, model_prefix + '_train', sufix = '_1gen', target_size = target_shape, quality = 95)
-    save_img_resize(images_train.gen2[0:10], image_path, model_prefix + '_train', sufix = '_2gen', target_size = target_shape, quality = 95)
-    save_img_orig(images_test.fullhd[0:10], image_path, model_prefix + '_test', quality = 95)
-    save_img_resize(images_test.gen1[0:10], image_path, model_prefix + '_test', sufix = '_1gen', target_size = target_shape, quality = 95)
-    save_img_resize(images_test.gen2[0:10], image_path, model_prefix + '_test', sufix = '_2gen', target_size = target_shape, quality = 95)
+    save_img_orig(images_train.fullhd[0:10],   image_path, model_prefix + '_train', quality = 95)
+    save_img_resize(images_train.gen1[0:10],   image_path, model_prefix + '_train', sufix = '_1gen', target_size = target_shape, quality = 95)
+    save_img_resize(images_train.gen2[0:10],   image_path, model_prefix + '_train', sufix = '_2gen', target_size = target_shape, quality = 95)
+    save_img_resize(images_train.scaled[0:10], image_path, model_prefix + '_train', sufix = '_scal', target_size = target_shape, quality = 95)
+    
+    save_img_orig(images_test.fullhd[0:10],   image_path, model_prefix + '_test', quality = 95)
+    save_img_resize(images_test.gen1[0:10],   image_path, model_prefix + '_test', sufix = '_1gen', target_size = target_shape, quality = 95)
+    save_img_resize(images_test.gen2[0:10],   image_path, model_prefix + '_test', sufix = '_2gen', target_size = target_shape, quality = 95)
+    save_img_resize(images_test.scaled[0:10], image_path, model_prefix + '_test', sufix = '_scal', target_size = target_shape, quality = 95)
 
     
     # actual training loop
@@ -255,15 +264,17 @@ if __name__== "__main__":
         image_batch_hr = convert_image_series_to_array(batch_df.fullhd)
         image_batch_1gen = convert_image_series_to_array(batch_df.gen1)
         image_batch_2gen = convert_image_series_to_array(batch_df.gen2)
+        image_batch_scal = convert_image_series_to_array(batch_df.scaled)
 
         loss_1gen = upscaler_training_model.train_on_batch(image_batch_1gen, image_batch_hr)
         loss_2gen = upscaler_training_model.train_on_batch(image_batch_2gen, image_batch_hr)
-        loss = (loss_1gen + loss_2gen) / 2
+        loss_scal = upscaler_training_model.train_on_batch(image_batch_scal, image_batch_hr)
+        loss = (loss_1gen + loss_2gen + loss_scal) / 3
         
         agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
 
         with open(loss_file_name, 'a') as loss_file:
-            loss_file.write('%d\t%f\t%f\t%f\n' %(b, loss_1gen, loss_2gen, agg_loss) )
+            loss_file.write('%d\t%f\t%f\t%f\t%f\n' %(b, loss_1gen, loss_2gen, loss_scal, agg_loss) )
         
         # update progress log with best model
         if b > values.model_save_freq and agg_loss < best_loss:
@@ -272,12 +283,13 @@ if __name__== "__main__":
             upscaler.save(model_file_name_best)
 
             with open(best_loss_file_name, 'a') as loss_file:
-                loss_file.write('%d\t%f\t%f\t%f\n' %(b, loss_1gen, loss_2gen, agg_loss) )
+                loss_file.write('%d\t%f\t%f\t%f\t%f\n' %(b, loss_1gen, loss_2gen, loss_scal, agg_loss) )
             
             best_model_progress = {
                 'batch': b,
                 'loss_1gen': float(loss_1gen),
                 'loss_2gen': float(loss_2gen),
+                'loss_scaled': float(loss_scal),
                 'agg_loss': float(agg_loss),
                 'saved': model_file_name_best
             }
@@ -296,6 +308,7 @@ if __name__== "__main__":
                 'batch': b,
                 'loss_1gen': float(loss_1gen),
                 'loss_2gen': float(loss_2gen),
+                'loss_scaled': float(loss_scal),
                 'agg_loss': float(agg_loss),
                 'path': model_file_name
             }, ignore_index=True)
@@ -305,8 +318,10 @@ if __name__== "__main__":
             with open(progress_file_path, 'w+') as progress_file:
                 json.dump(progress, progress_file, indent = 4, cls = PandasEncoder)
             
-            save_img_predict(images_train.gen1[0:10], upscaler, image_path, model_prefix + '_train', b, sufix = '_1gen', quality = 95)
-            save_img_predict(images_train.gen2[0:10], upscaler, image_path, model_prefix + '_train', b, sufix = '_2gen', quality = 95)
-            save_img_predict(images_test.gen1[0:10], upscaler, image_path, model_prefix + '_test', b, sufix = '_1gen', quality = 95)
-            save_img_predict(images_test.gen2[0:10], upscaler, image_path, model_prefix + '_test', b, sufix = '_2gen', quality = 95)
+            save_img_predict(images_train.gen1[0:10],   upscaler, image_path, model_prefix + '_train', b, sufix = '_1gen', quality = 95)
+            save_img_predict(images_train.gen2[0:10],   upscaler, image_path, model_prefix + '_train', b, sufix = '_2gen', quality = 95)
+            save_img_predict(images_train.scaled[0:10], upscaler, image_path, model_prefix + '_train', b, sufix = '_scal', quality = 95)
+            save_img_predict(images_test.gen1[0:10],   upscaler, image_path, model_prefix + '_test', b, sufix = '_1gen', quality = 95)
+            save_img_predict(images_test.gen2[0:10],   upscaler, image_path, model_prefix + '_test', b, sufix = '_2gen', quality = 95)
+            save_img_predict(images_test.scaled[0:10], upscaler, image_path, model_prefix + '_test', b, sufix = '_scal', quality = 95)
             

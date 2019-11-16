@@ -12,7 +12,7 @@ def indentity_func(x, **kwargs):
     return x
 
 
-def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func = indentity_func, downscale_factor = 4, desc = "Loading files"):
+def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func = indentity_func, downscale_factor = 4, method = Image.LANCZOS, desc = "Loading files"):
     file_list = os.listdir(dir_loc)
     file_list = sorted(list(filter(lambda s: s.endswith(ext), file_list)))
     limit = min(len(file_list), limit)
@@ -32,7 +32,7 @@ def load_images_from_dir_and_downscale(dir_loc, ext, limit = np.inf, prog_func =
         lr_width = img_hr.width // downscale_factor
         lr_height = img_hr.height // downscale_factor
         
-        img_lr = img_hr.resize((lr_width, lr_height), Image.LANCZOS)
+        img_lr = img_hr.resize((lr_width, lr_height), method)
         
         files = files.append({
             'filename': f,
@@ -72,7 +72,27 @@ def load_images_from_dir(dir_loc, ext, limit = np.inf, prog_func = indentity_fun
     return files
 
 
-def crop_images(hq_images, prog_func = indentity_func, target_shape = (256, 256), downscale_ratio = np.nan, seed = np.nan, desc = "Processing files"):
+def downscale_images(hq_images, downscale_ratio, prog_func = indentity_func, method = Image.BICUBIC, desc = "Downscaling images"):
+    
+    downscaled = []
+    
+    for id, img in prog_func(hq_images.iterrows(), desc = desc):
+        img_hr = img['image_hr']
+        img_shape = img_hr.size
+        
+        img_lr = img_hr.resize((img_shape[0] // downscale_ratio, img_shape[1] // downscale_ratio), method)
+        downscaled.append(img_lr)
+    
+    res = hq_images.assign(
+        downscaled = downscaled
+    )
+
+    return res
+
+
+
+
+def crop_images(hq_images, prog_func = indentity_func, target_shape = (256, 256), downscale_ratio = np.nan, seed = np.nan, method = Image.BICUBIC, desc = "Cropping images"):
     
     if not np.isnan(seed):
         rand_state = np.random.get_state()
@@ -101,7 +121,7 @@ def crop_images(hq_images, prog_func = indentity_func, target_shape = (256, 256)
         crop_shapes.append(crop_shape)
         
         if not np.isnan(downscale_ratio):
-            img_lr = img_cropped.resize((target_shape[0] // 4, target_shape[1] // 4), Image.LANCZOS)
+            img_lr = img_cropped.resize((target_shape[0] // 4, target_shape[1] // 4), method)
             img_crop_lr.append(img_lr)
     
     res = hq_images.assign(
