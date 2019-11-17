@@ -52,7 +52,7 @@ if __name__== "__main__":
     
     parser.add_argument('-ow', '--output_width', action='store', dest='output_width', default='512', help='Width of the output during training', type=int)
     
-    parser.add_argument('-nb', '--number_of_batches', action='store', dest='number_of_batches', default='200001', help='Number batches to be run', type=int)
+    parser.add_argument('-nb', '--number_of_batches', action='store', dest='number_of_batches', default='400001', help='Number batches to be run', type=int)
     
     parser.add_argument('-d', '--downscale_factor', action='store', dest='downscale_factor', default='4', help='Downscale factor', type=int)
     
@@ -236,16 +236,17 @@ if __name__== "__main__":
     
     saved_models = pd.DataFrame({
         'batch': [],
+        'loss': [],
         'agg_loss': [],
         'path': []
     })
     
     # loss logs initialisations
     with open(loss_file_name, 'w+') as loss_file:
-        loss_file.write('batch\tloss_1gen\tloss_2gen\tloss_scaled\tagg_loss\n')
+        loss_file.write('batch\tloss\tagg_loss\n')
 
     with open(best_loss_file_name, 'w+') as loss_file:
-        loss_file.write('batch\tloss_1gen\tloss_2gen\tloss_scaled\tagg_loss\n')
+        loss_file.write('batch\tloss\tagg_loss\n')
     
     
     # saving lowres and highres examples
@@ -276,7 +277,7 @@ if __name__== "__main__":
         agg_loss = (1 - loss_update_rate) * agg_loss + loss_update_rate * loss
 
         with open(loss_file_name, 'a') as loss_file:
-            loss_file.write('%d\t%f\n' %(b, agg_loss))
+            loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss))
         
         # update progress log with best model
         if b > values.model_save_freq and agg_loss < best_loss:
@@ -285,10 +286,11 @@ if __name__== "__main__":
             upscaler.save(model_file_name_best)
 
             with open(best_loss_file_name, 'a') as loss_file:
-                loss_file.write('%d\t%f\n' %(b, agg_loss))
+                loss_file.write('%d\t%f\t%f\n' %(b, loss, agg_loss))
             
             best_model_progress = {
                 'batch': b,
+                'loss': float(loss),
                 'agg_loss': float(agg_loss),
                 'saved': model_file_name_best
             }
@@ -305,6 +307,7 @@ if __name__== "__main__":
             # update progress log with next model saved
             saved_models = saved_models.append({
                 'batch': b,
+                'loss': float(loss),
                 'agg_loss': float(agg_loss),
                 'path': model_file_name
             }, ignore_index=True)
