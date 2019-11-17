@@ -140,6 +140,78 @@ def crop_images(hq_images, prog_func = indentity_func, target_shape = (256, 256)
     return res
 
 
+
+
+
+def crop_images_cgc(images, prog_func = indentity_func, target_shape = (256, 256), downscale_ratio = 4, seed = np.nan, method = Image.BICUBIC, desc = "Cropping images"):
+    
+    if not np.isnan(seed):
+        rand_state = np.random.get_state()
+        np.random.seed(seed)
+    
+    target_shape_lq = (target_shape[0] // downscale_ratio, target_shape[1] // downscale_ratio)
+    
+    crop_shapes_lq = []
+    crop_shapes_hq = []
+    cropped_hd = []
+    cropped_scaled = []
+    cropped_gen1 = []
+    cropped_gen2 = []
+
+    for id, img in prog_func(images.iterrows(), desc = desc):
+
+        img_scaled = img['scaled']         
+        img_lq_shape = img_scaled.size
+        
+        width_range  = img_scaled.size[0] - target_shape_lq[0]
+        height_range = img_scaled.size[1] - target_shape_lq[1]
+            
+        left_lq = np.random.randint(0, width_range + 1, 1)[0]
+        top_lq  = np.random.randint(0, height_range + 1, 1)[0]
+        
+        crop_shape_lq = (
+            int(left_lq),
+            int(top_lq),
+            int(left_lq + target_shape_lq[0]),
+            int(top_lq + target_shape_lq[1])
+        )
+        crop_shape_hq = (
+            downscale_ratio * crop_shape_lq[0],
+            downscale_ratio * crop_shape_lq[1],
+            downscale_ratio * crop_shape_lq[2],
+            downscale_ratio * crop_shape_lq[3]
+        )
+        
+        crop_shapes_lq.append(crop_shape_lq)
+        crop_shapes_hq.append(crop_shape_hq)
+        
+        cropped_scaled.append(img.scaled.crop(crop_shape_lq))
+        cropped_gen1.append(img.gen1.crop(crop_shape_lq))
+        cropped_gen2.append(img.gen2.crop(crop_shape_lq))
+        cropped_hd.append(img.fullhd.crop(crop_shape_hq))
+    
+    res = images.assign(
+        crop_shapes_lq = crop_shapes_lq,
+        crop_shapes_hq = crop_shapes_hq,
+        cropped_hd = cropped_hd,
+        cropped_scaled = cropped_scaled,
+        cropped_gen1 = cropped_gen1,
+        cropped_gen2 = cropped_gen2
+    )
+    
+    if not np.isnan(seed):
+        np.random.set_state(rand_state)
+    
+    return res
+
+
+
+
+
+
+
+
+
 def split_images_train_test(images_df, train_test_ratio = 0.8, seed = np.nan):
     
     if not np.isnan(seed):
