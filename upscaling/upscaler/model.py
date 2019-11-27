@@ -1,9 +1,9 @@
 import keras.backend as K
 from keras.applications.vgg19 import VGG19
 from keras.models import Model
-from keras.layers import Input, Lambda, Add, Concatenate, Dropout, Multiply
+from keras.layers import Input, Lambda, Add, Concatenate, Dropout, Multiply, Dense
 from keras.optimizers import Adam
-from keras.layers.core import Activation
+from keras.layers.core import Activation, Flatten
 from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose, Cropping2D
 from keras.layers.advanced_activations import LeakyReLU, PReLU
 from keras.layers.normalization import BatchNormalization
@@ -99,14 +99,15 @@ def upsampling_block_attention(model, input_, scale, kernel_size, filters, name=
     
 class VGG_LOSS(object):
 
-    def __init__(self, image_shape):
+    def __init__(self, image_shape, vgg19 = None):
         
         self.image_shape = image_shape
         
-        vgg19 = VGG19(include_top=False, weights='imagenet', input_shape=self.image_shape)
-        vgg19.trainable = False
-        for l in vgg19.layers:
-            l.trainable = False
+        if vgg19 is None:
+            vgg19 = VGG19(include_top=False, weights='imagenet', input_shape=self.image_shape)
+            vgg19.trainable = False
+            for l in vgg19.layers:
+                l.trainable = False
         
         self.model = Model(inputs=vgg19.input, outputs=vgg19.get_layer('block5_conv4').output)
         self.model.trainable = False
@@ -117,15 +118,16 @@ class VGG_LOSS(object):
 
 class VGG_MSE_LOSS(object):
 
-    def __init__(self, image_shape, mse_loss_rate = 0.1):
+    def __init__(self, image_shape, mse_loss_rate = 0.1, vgg19 = None):
         
         self.image_shape = image_shape
         self.mse_loss_rate = mse_loss_rate
         
-        vgg19 = VGG19(include_top=False, weights='imagenet', input_shape=self.image_shape)
-        vgg19.trainable = False
-        for l in vgg19.layers:
-            l.trainable = False
+        if vgg19 is None:
+            vgg19 = VGG19(include_top=False, weights='imagenet', input_shape=self.image_shape)
+            vgg19.trainable = False
+            for l in vgg19.layers:
+                l.trainable = False
         
         self.model = Model(inputs=vgg19.input, outputs=vgg19.get_layer('block5_conv4').output)
         self.model.trainable = False
@@ -136,15 +138,16 @@ class VGG_MSE_LOSS(object):
 
 class VGG_MAE_LOSS(object):
 
-    def __init__(self, image_shape, mae_loss_rate = 0.1):
+    def __init__(self, image_shape, mae_loss_rate = 0.1, vgg19 = None):
         
         self.image_shape = image_shape
         self.mae_loss_rate = mae_loss_rate
         
-        vgg19 = VGG19(include_top=False, weights='imagenet', input_shape=self.image_shape)
-        vgg19.trainable = False
-        for l in vgg19.layers:
-            l.trainable = False
+        if vgg19 is None:
+            vgg19 = VGG19(include_top=False, weights='imagenet', input_shape=self.image_shape)
+            vgg19.trainable = False
+            for l in vgg19.layers:
+                l.trainable = False
         
         self.model = Model(inputs=vgg19.input, outputs=vgg19.get_layer('block5_conv4').output)
         self.model.trainable = False
@@ -152,6 +155,9 @@ class VGG_MAE_LOSS(object):
     def loss(self, y_true, y_pred):
         return K.mean(K.abs(self.model(y_true) - self.model(y_pred))) + self.mae_loss_rate * K.mean(K.abs(y_true - y_pred))
 
+
+def wasserstein_loss(y_true, y_pred):
+    return K.mean(y_true * y_pred)
 
 
 def make_upscaler_orig(output_image_shape, kernel_size = 5, filters = 64, upscale_factor = 4, res_block_num=16):
@@ -586,6 +592,63 @@ def make_upscaler_unetish_complex(output_image_shape, kernel_size = 5, upscale_f
 
 
 
+
+
+
+
+def make_vgg_discriminator(input_shape, final_sigmoid = False):
+    input = Input(input_shape, name = 'discriminator/input')
+
+    layer = Conv2D(filters = 64, kernel_size = 3, strides = 1, padding = "same", name = 'discriminator/block_1/Conv2d')(input)
+    layer = BatchNormalization(name = 'discriminator/block_1/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_1/LeakyReLU')(layer)
+    
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_2/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_2/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_2/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_3/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_3/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_3/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 512, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_4/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_4/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_4/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 512, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_5/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_5/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_5/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 512, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_6/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_6/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_6/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 512, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_7/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_7/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_7/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 512, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_8/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_8/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_8/LeakyReLU')(layer)
+    
+    layer = Conv2D(filters = 512, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_9/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_9/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_9/LeakyReLU')(layer)
+
+    layer = Flatten(name = 'discriminator/final/Flatten')(layer)
+    layer = Dense(1024, name = 'discriminator/final/Dense_1')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_1')(layer)
+    
+    layer = Dense(32, name = 'discriminator/final/Dense_2')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_2')(layer)
+
+    layer = Dense(1, name = 'discriminator/final/Dense_3')(layer)
+    if final_sigmoid:
+        layer = Activation('sigmoid', name = 'discriminator/final/sigmoid')(layer)
+
+    model  = Model(inputs = input, outputs = layer)
+    
+    return model
 
 
 
