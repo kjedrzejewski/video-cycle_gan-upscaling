@@ -596,7 +596,7 @@ def make_upscaler_unetish_complex(output_image_shape, kernel_size = 5, upscale_f
 
 
 
-def make_vgg_discriminator(input_shape, final_sigmoid = False):
+def make_discriminator_simple_512(input_shape, final_sigmoid = False):
     input = Input(input_shape, name = 'discriminator/input')
 
     layer = Conv2D(filters = 64, kernel_size = 3, strides = 1, padding = "same", name = 'discriminator/block_1/Conv2d')(input)
@@ -650,6 +650,45 @@ def make_vgg_discriminator(input_shape, final_sigmoid = False):
     
     return model
 
+
+
+
+
+def make_and_compile_gan(
+    generator,
+    discriminator,
+    input_shape,
+    output_shape,
+    content_loss,
+    content_loss_weight,
+    discriminator_loss,
+    discriminator_loss_weight,
+    optimizer=Adam()
+):
+    
+    generator_input_layer = Input(shape=input_shape)
+    generator_layer = generator(generator_input_layer)
+    generator_training_model = Model(inputs=generator_input_layer, outputs=generator_layer)
+    generator_training_model.compile(loss=content_loss, optimizer=optimizer)
+    
+    discriminator.trainable = True
+    discriminator_input_layer = Input(shape=output_shape)
+    discriminator_layer = discriminator(discriminator_input_layer)
+    discriminator_training_model = Model(inputs=discriminator_input_layer, outputs=discriminator_layer)
+    discriminator_training_model.compile(loss=discriminator_loss, optimizer=optimizer)
+    
+    discriminator.trainable = False
+    gan_input_layer = Input(shape=input_shape)
+    gan_generator_layer = generator(gan_input_layer)
+    gan_discriminator_layer = discriminator(gan_generator_layer)
+    gan_training_model = Model(inputs=gan_input_layer, outputs=[gan_generator_layer, gan_discriminator_layer])
+    gan_training_model.compile(
+        loss=[content_loss, discriminator_loss],
+        loss_weights=[content_loss_weight, discriminator_loss_weight],
+        optimizer=optimizer
+    )
+    
+    return generator_training_model, discriminator_training_model, gan_training_model
 
 
 
