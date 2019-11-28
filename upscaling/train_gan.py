@@ -43,9 +43,7 @@ if __name__== "__main__":
     
     parser.add_argument('-dm', '--discriminator_model', action='store', dest='discriminator_model', default='simple-512', choices=['simple-512'], help='Discriminator model to be used')
     
-    parser.add_argument('-da', '--discriminator_activation', dest='discriminator_activation', action='store_true', help='Use activtation for the discriminator output')
-    parser.add_argument('-nda', '--no-discriminator_activation', dest='discriminator_activation', action='store_false', help='Don\'t use activtation for the discriminator output')
-    parser.set_defaults(discriminator_activation=False)
+    parser.add_argument('-da', '--discriminator_activation', action='store', dest='discriminator_activation', default='log', choices=['none', 'sigmoid', 'tanh', 'log'], help='Activation to use for the discriminator')
     
     parser.add_argument('-cl', '--content_loss', action='store', dest='content_loss', default='vgg-only', choices=['vgg-only','vgg-mae','vgg-mse'], help='Content loss function to be used for the training')
     
@@ -115,7 +113,7 @@ if __name__== "__main__":
     #model_prefix = "orig_vgg-mse"
     model_prefix = values.output_prefix
     if model_prefix == 'auto':
-        model_prefix = "gan_" + values.generator_model + "_" + values.content_loss + "_" + values.discriminator_model + "_" + values.discriminator_loss + ("_x%d" % downscale_factor)
+        model_prefix = "gan_" + values.generator_model + "_" + values.content_loss + "_" + values.discriminator_model + "_" + values.discriminator_loss + '_' + values.discriminator_activation + ("_x%d" % downscale_factor)
         print("Prefix generated automatically: '" + model_prefix + "'")
     
     number_of_images = values.image_count
@@ -224,7 +222,7 @@ if __name__== "__main__":
     
     # create the discriminator instance
     if values.discriminator_model == 'simple-512':
-        discriminator = make_discriminator_simple_512(output_image_shape, final_sigmoid = values.discriminator_activation)
+        discriminator = make_discriminator_simple_512(output_image_shape, activation = values.discriminator_activation)
     
     # create the content loss
     if values.content_loss == 'vgg-only':

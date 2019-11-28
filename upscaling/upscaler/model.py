@@ -596,7 +596,7 @@ def make_upscaler_unetish_complex(output_image_shape, kernel_size = 5, upscale_f
 
 
 
-def make_discriminator_simple_512(input_shape, final_sigmoid = False):
+def make_discriminator_simple_512(input_shape, activation = 'none'):
     input = Input(input_shape, name = 'discriminator/input')
 
     layer = Conv2D(filters = 64, kernel_size = 3, strides = 1, padding = "same", name = 'discriminator/block_1/Conv2d')(input)
@@ -637,14 +637,20 @@ def make_discriminator_simple_512(input_shape, final_sigmoid = False):
 
     layer = Flatten(name = 'discriminator/final/Flatten')(layer)
     layer = Dense(1024, name = 'discriminator/final/Dense_1')(layer)
+    layer = BatchNormalization(name = 'discriminator/final/BatchNorm_1')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_1')(layer)
     
     layer = Dense(32, name = 'discriminator/final/Dense_2')(layer)
+    layer = BatchNormalization(name = 'discriminator/final/BatchNorm_2')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_2')(layer)
 
     layer = Dense(1, name = 'discriminator/final/Dense_3')(layer)
-    if final_sigmoid:
+    if activation == 'sigmoid':
         layer = Activation('sigmoid', name = 'discriminator/final/sigmoid')(layer)
+    elif activation == 'tanh':
+        layer = Activation('tanh', name = 'discriminator/final/tanh')(layer)
+    elif activation == 'log':
+        layer = Lambda(lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2))(layer)
 
     model  = Model(inputs = input, outputs = layer)
     
