@@ -10,6 +10,7 @@ from keras.layers.normalization import BatchNormalization
 from keras.models import load_model
 import tensorflow as tf
 import math
+from abc import abstractmethod, ABCMeta
 
 def residual_block(model, kernel_size, filters, strides, name=""):
     
@@ -155,9 +156,112 @@ class VGG_MAE_LOSS(object):
     def loss(self, y_true, y_pred):
         return K.mean(K.abs(self.model(y_true) - self.model(y_pred))) + self.mae_loss_rate * K.mean(K.abs(y_true - y_pred))
 
-
 def wasserstein_loss(y_true, y_pred):
     return K.mean(y_true * y_pred)
+
+
+
+
+
+class GanLosses(metaclass = ABCMeta):
+        
+    def __init__(self, loss_activation = 'log-sigm', real_output = None, fake_output = None):
+        self._real_output = real_output
+        self._fake_output = fake_output
+        
+        if loss_activation == 'sigmoid':
+            self.loss_activation = lambda x: K.sigmoid(x)
+        elif loss_activation == 'log-sigm':
+            self.loss_activation = lambda x: K.log(K.sigmoid(x))
+        elif loss_activation == 'tanh':
+            self.loss_activation = lambda x: K.tanh(x)
+        elif loss_activation == 'bi-log':
+            self.loss_activation = lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2)
+        else:
+            self.loss_activation = lambda x: x
+    
+    
+    @property
+    def real_output(self):
+        return self._real_output
+
+    @real_output.setter
+    def real_output(self, real_output):
+        self._real_output = real_output
+        
+    
+    @property
+    def fake_output(self):
+        return self._fake_output
+
+    @fake_output.setter
+    def fake_output(self, fake_output):
+        self._fake_output = fake_output
+
+            
+    @property
+    @abstractmethod
+    def discriminator_loss(self):
+        pass
+    
+    @property
+    @abstractmethod
+    def generator_loss(self):
+        pass
+        
+    
+
+
+class WassersteinLosses(GanLosses):
+    
+    @property
+    def discriminator_loss(self):
+        
+        def loss(y_true,y_pred):
+            l = K.mean(self._real_output) - K.mean(self._fake_output)
+            
+            return l
+        
+        return loss
+    
+    @property
+    def generator_loss(self):
+        
+        def loss(y_true,y_pred):
+            l = K.mean(self._fake_output) - K.mean(self._real_output)
+            
+            return l
+        
+        return loss
+
+    
+
+class RelativisticLosses(GanLosses):
+    
+    @property
+    def discriminator_loss(self):
+        
+        def loss(y_true,y_pred):
+            l = K.mean(self._real_output) - K.mean(self._fake_output)
+            l = self.loss_activation(l)
+            
+            return l
+        
+        return loss
+    
+    @property
+    def generator_loss(self):
+        
+        def loss(y_true,y_pred):
+            l = K.mean(self._fake_output) - K.mean(self._real_output)
+            l = self.loss_activation(l)
+            
+            return l
+        
+        return loss
+    
+    
+
 
 
 def make_upscaler_orig(output_image_shape, kernel_size = 5, filters = 64, upscale_factor = 4, res_block_num=16):
@@ -780,10 +884,12 @@ def make_discriminator_simple_512(input_shape, activation = 'none'):
     layer = Dense(1, name = 'discriminator/final/Dense_3')(layer)
     if activation == 'sigmoid':
         layer = Activation('sigmoid', name = 'discriminator/final/sigmoid')(layer)
+    elif activation == 'log-sigm':
+        layer = Lambda(lambda x: K.log(K.sigmoid(x)), name = 'discriminator/final/log-sigmoid')(layer)
     elif activation == 'tanh':
         layer = Activation('tanh', name = 'discriminator/final/tanh')(layer)
-    elif activation == 'log':
-        layer = Lambda(lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2))(layer)
+    elif activation == 'bi-log':
+        layer = Lambda(lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2), name = 'discriminator/final/bi-log')(layer)
 
     model  = Model(inputs = input, outputs = layer)
     
@@ -831,10 +937,12 @@ def make_discriminator_sparse_512(input_shape, activation = 'none'):
     layer = Dense(1, name = 'discriminator/final/Dense_3')(layer)
     if activation == 'sigmoid':
         layer = Activation('sigmoid', name = 'discriminator/final/sigmoid')(layer)
+    elif activation == 'log-sigm':
+        layer = Lambda(lambda x: K.log(K.sigmoid(x)), name = 'discriminator/final/log-sigmoid')(layer)
     elif activation == 'tanh':
         layer = Activation('tanh', name = 'discriminator/final/tanh')(layer)
-    elif activation == 'log':
-        layer = Lambda(lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2))(layer)
+    elif activation == 'bi-log':
+        layer = Lambda(lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2), name = 'discriminator/final/bi-log')(layer)
 
     model  = Model(inputs = input, outputs = layer)
     
@@ -879,6 +987,79 @@ def make_and_compile_gan(
     
     return generator_training_model, discriminator_training_model, gan_training_model
 
+
+
+
+
+def make_and_compile_gan2(
+    generator,
+    discriminator,
+    input_shape,
+    output_shape,
+    content_loss,
+    content_loss_weight,
+    discriminator_losses,
+    discriminator_loss_weight,
+    optimizer=Adam()
+):
+
+
+    generator_input = Input(shape=input_shape)
+    generator_output = generator(generator_input)
+    generator_training_model = Model(inputs=generator_input, outputs=generator_output)
+    generator_training_model.compile(loss=content_loss, optimizer=optimizer)
+    
+    
+    
+    discriminator.trainable = True
+    
+    discriminator_real_input  = Input(shape=output_shape)
+    discriminator_real_output = discriminator(discriminator_real_input)
+    
+    discriminator_fake_input  = Input(shape=output_shape)
+    discriminator_fake_output = discriminator(discriminator_fake_input)
+    
+    disc_loss = discriminator_losses()
+    disc_loss.real_output = discriminator_real_output
+    disc_loss.fake_output = discriminator_fake_output
+    disc_loss = disc_loss.discriminator_loss
+    
+    discriminator_training_model = Model(
+        inputs=[discriminator_real_input, discriminator_fake_input],
+        outputs=discriminator_fake_output
+    )
+    discriminator_training_model.compile(
+        loss=disc_loss,
+        optimizer=optimizer
+    )
+    
+    
+    
+    discriminator.trainable = False
+    
+    gan_real_input  = Input(shape=output_shape)
+    gan_disc_real_output = discriminator(gan_real_input)
+    
+    gan_input_layer = Input(shape=input_shape)
+    gan_generator_output = generator(gan_input_layer)
+    gan_disc_fake_output = discriminator(gan_generator_output)
+    
+    gan_loss = discriminator_losses()
+    gan_loss.real_output = gan_disc_real_output
+    gan_loss.fake_output = gan_disc_fake_output
+    gan_loss = gan_loss.generator_loss
+          
+    gan_training_model = Model(
+        inputs=[gan_input_layer, gan_real_input],
+        outputs=[gan_generator_output, gan_disc_fake_output]
+    )
+    gan_training_model.compile(
+        loss=[content_loss, gan_loss],
+        loss_weights=[content_loss_weight, discriminator_loss_weight],
+        optimizer=optimizer
+    )
+    
+    return generator_training_model, discriminator_training_model, gan_training_model
 
 
 
