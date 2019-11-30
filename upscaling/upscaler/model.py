@@ -265,6 +265,139 @@ def make_upscaler_skip_con(output_image_shape, kernel_size = 5, filters = 64, up
 
 
 
+def inception_mini_resblock(model, filters, name, kernel_size, batch_normalisation = True):
+    
+    if batch_normalisation:
+        model = BatchNormalization(name = name+'/batch_norm')(model)
+        
+    model = PReLU(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1,2], name = name+'/prelu')(model)
+
+    model = Conv2D(filters = filters, kernel_size = kernel_size, padding = "same", name = name+'/%dx%d' % (kernel_size[0], kernel_size[1]))(model)
+    
+    return model
+
+
+
+
+def inception_resblock_3path(model, filters, name, kernel_size = 3, batch_normalisation = True):
+    
+    gen = model
+    
+    path_a_filters = int(filters * 0.5)
+    path_b_filters = int(filters * 0.5)
+    path_c_filters1 = int(filters * 0.5)
+    path_c_filters2 = int(filters * 0.75)
+    path_c_filters3 = filters
+    
+
+    path_a_model = inception_mini_resblock(model, path_a_filters, name = name+'/a/1', kernel_size = (1,1), batch_normalisation = batch_normalisation)
+    
+    path_b_model = inception_mini_resblock(model, path_b_filters, name = name+'/b/1', kernel_size = (1,1), batch_normalisation = batch_normalisation)
+    path_b_model = inception_mini_resblock(path_b_model, path_b_filters, name = name+'/b/2', kernel_size = (kernel_size,kernel_size), batch_normalisation = batch_normalisation)
+    
+    path_c_model = inception_mini_resblock(model, path_c_filters1, name = name+'/c/1', kernel_size = (1,1), batch_normalisation = batch_normalisation)
+    path_c_model = inception_mini_resblock(path_c_model, path_c_filters2, name = name+'/c/2', kernel_size = (kernel_size,kernel_size), batch_normalisation = batch_normalisation)
+    path_c_model = inception_mini_resblock(path_c_model, path_c_filters3, name = name+'/c/3', kernel_size = (kernel_size,kernel_size), batch_normalisation = batch_normalisation)
+
+    model = Concatenate(axis = 3, name = name+'/final/concat')([path_a_model, path_b_model, path_c_model])
+    model = Conv2D(filters = filters, kernel_size = 1, padding = "same", name = name+'/final/1x1')(model)
+    
+    model = Add(name = name+'/final/add')([gen, model])
+
+    return model
+
+
+
+
+def inception_resblock_2path(model, filters, name, kernel_size = 7, batch_normalisation = True):
+    
+    gen = model
+
+    path_a_filters = int(filters * 0.5)
+    path_b_filters1 = int(filters * 0.3)
+    path_b_filters2 = int(filters * 0.4)
+    path_b_filters3 = int(filters * 0.5)
+    
+    path_a_model = inception_mini_resblock(model, path_a_filters, name = name+'/a/1', kernel_size = (1,1), batch_normalisation = batch_normalisation)
+    
+    path_b_model = inception_mini_resblock(model, path_b_filters1, name = name+'/b/1', kernel_size = (1,1), batch_normalisation = batch_normalisation)
+    path_b_model = inception_mini_resblock(path_b_model, path_b_filters2, name = name+'/b/2', kernel_size = (1,kernel_size), batch_normalisation = batch_normalisation)
+    path_b_model = inception_mini_resblock(path_b_model, path_b_filters3, name = name+'/b/3', kernel_size = (kernel_size,1), batch_normalisation = batch_normalisation)
+    
+    model = Concatenate(axis = 3, name = name+'/final/concat')([path_a_model, path_b_model])
+    model = Conv2D(filters = filters, kernel_size = 1, padding = "same", name = name+'/final/1x1')(model)
+    
+    model = Add(name = name+'/final/add')([gen, model])
+
+    return model
+
+
+
+
+
+
+def make_upscaler_incep_resnet(
+    output_image_shape, filters = 64, upscale_factor = 4,
+    a_block_type = '3path', a_block_num = 5, a_block_kernel = 3,
+    b_block_type = '2path', b_block_num = 10, b_block_kernel = 7,
+    c_block_type = '2path', c_block_num = 5, c_block_kernel = 3
+):
+    
+    input_image_shape = (output_image_shape[0] // upscale_factor, output_image_shape[1] // upscale_factor, output_image_shape[2])
+    upscale_times = int(math.log(upscale_factor,2))
+    upscaler_input = Input(shape = input_image_shape, name="initial/input")
+
+    
+    model = Conv2D(filters = filters, kernel_size = 9, strides = 1, padding = "same", name="initial/conv/9x9")(upscaler_input)
+
+    upsc_model = model
+
+    for index in range(a_block_num):
+        if a_block_type == '3path':
+            model = inception_resblock_3path(model, filters, name="inc_res_block/A/3p/"+str(index), kernel_size = a_block_kernel, batch_normalisation = True)
+        elif a_block_type == '2path':
+            model = inception_resblock_2path(model, filters, name="inc_res_block/A/2p/"+str(index), kernel_size = a_block_kernel, batch_normalisation = True)
+    
+    for index in range(b_block_num):
+        if b_block_type == '3path':
+            model = inception_resblock_3path(model, filters, name="inc_res_block/B/3p/"+str(index), kernel_size = b_block_kernel, batch_normalisation = True)
+        elif b_block_type == '2path':
+            model = inception_resblock_2path(model, filters, name="inc_res_block/B/2p/"+str(index), kernel_size = b_block_kernel, batch_normalisation = True)
+
+    for index in range(c_block_num):
+        if c_block_type == '3path':
+            model = inception_resblock_3path(model, filters, name="inc_res_block/c/3p/"+str(index), kernel_size = c_block_kernel, batch_normalisation = True)
+        elif c_block_type == '2path':
+            model = inception_resblock_2path(model, filters, name="inc_res_block/c/2p/"+str(index), kernel_size = c_block_kernel, batch_normalisation = True)
+
+    model = Conv2D(filters = filters, kernel_size = c_block_kernel, strides = 1, padding = "same", name='prefinal/conv2d')(model)
+    model = BatchNormalization(name='prefinal/batch_norm')(model)
+    model = Add(name='prefinal/tanh')([upsc_model, model])
+
+    for index in range(upscale_times):
+        model = upsampling_block(model, c_block_kernel, 256, 2, name='upscaling/'+str(index)+'/block')
+
+    model = Conv2D(filters = 3, kernel_size = 9, strides = 1, padding = "same", name='final/conv')(model)
+    model = Activation('tanh', name='final/tanh')(model)
+
+    upscaler_model = Model(inputs = upscaler_input, outputs = model)
+
+    return upscaler_model
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def same_size_unetish_block(model, kernel_size, filters, strides, name, dropout_rate=0.1):
     
     model = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, padding = "same", name = name+'/Conv2D')(model)
@@ -656,6 +789,56 @@ def make_discriminator_simple_512(input_shape, activation = 'none'):
     
     return model
 
+
+
+
+def make_discriminator_sparse_512(input_shape, activation = 'none'):
+    input = Input(input_shape, name = 'discriminator/input')
+
+    layer = Conv2D(filters = 64, kernel_size = 5, strides = 1, padding = "valid", name = 'discriminator/block_1/Conv2d')(input)
+    layer = BatchNormalization(name = 'discriminator/block_1/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_1/LeakyReLU')(layer)
+    
+    layer = Conv2D(filters = 128, kernel_size = 5, strides = 3 , padding = "valid", name = 'discriminator/block_2/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_2/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_2/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 5, strides = 3, padding = "valid", name = 'discriminator/block_3/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_3/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_3/LeakyReLU')(layer)
+    
+    layer = Conv2D(filters = 256, kernel_size = 5, strides = 3, padding = "valid", name = 'discriminator/block_4/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_4/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_4/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 5, strides = 3, padding = "valid", name = 'discriminator/block_5/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_5/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_5/LeakyReLU')(layer)
+    
+    layer = Conv2D(filters = 256, kernel_size = 5, strides = 3, padding = "valid", name = 'discriminator/block_6/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_6/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_6/LeakyReLU')(layer)
+
+    layer = Flatten(name = 'discriminator/final/Flatten')(layer)
+    layer = Dense(128, name = 'discriminator/final/Dense_1')(layer)
+    layer = BatchNormalization(name = 'discriminator/final/BatchNorm_1')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_1')(layer)
+    
+    layer = Dense(32, name = 'discriminator/final/Dense_2')(layer)
+    layer = BatchNormalization(name = 'discriminator/final/BatchNorm_2')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_2')(layer)
+
+    layer = Dense(1, name = 'discriminator/final/Dense_3')(layer)
+    if activation == 'sigmoid':
+        layer = Activation('sigmoid', name = 'discriminator/final/sigmoid')(layer)
+    elif activation == 'tanh':
+        layer = Activation('tanh', name = 'discriminator/final/tanh')(layer)
+    elif activation == 'log':
+        layer = Lambda(lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2))(layer)
+
+    model  = Model(inputs = input, outputs = layer)
+    
+    return model
 
 
 
