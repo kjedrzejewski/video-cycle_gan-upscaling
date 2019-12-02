@@ -909,31 +909,31 @@ def make_discriminator_thin_512(input_shape, activation = 'none'):
     layer = BatchNormalization(name = 'discriminator/block_2/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_2/LeakyReLU')(layer)
 
-    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_3/Conv2d')(layer)
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_3/Conv2d')(layer)
     layer = BatchNormalization(name = 'discriminator/block_3/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_3/LeakyReLU')(layer)
 
-    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_4/Conv2d')(layer)
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_4/Conv2d')(layer)
     layer = BatchNormalization(name = 'discriminator/block_4/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_4/LeakyReLU')(layer)
 
-    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_5/Conv2d')(layer)
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_5/Conv2d')(layer)
     layer = BatchNormalization(name = 'discriminator/block_5/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_5/LeakyReLU')(layer)
 
-    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_6/Conv2d')(layer)
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_6/Conv2d')(layer)
     layer = BatchNormalization(name = 'discriminator/block_6/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_6/LeakyReLU')(layer)
 
-    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_7/Conv2d')(layer)
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_7/Conv2d')(layer)
     layer = BatchNormalization(name = 'discriminator/block_7/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_7/LeakyReLU')(layer)
 
-    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_8/Conv2d')(layer)
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_8/Conv2d')(layer)
     layer = BatchNormalization(name = 'discriminator/block_8/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_8/LeakyReLU')(layer)
     
-    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_9/Conv2d')(layer)
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_9/Conv2d')(layer)
     layer = BatchNormalization(name = 'discriminator/block_9/BatchNorm')(layer)
     layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_9/LeakyReLU')(layer)
 
