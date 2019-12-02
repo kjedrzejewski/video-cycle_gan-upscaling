@@ -2,7 +2,7 @@ from upscaler.data import load_images_from_dir, split_images_train_test, downsca
 from upscaler.data import select_random_rows, convert_image_series_to_array, convert_array_to_image
 from upscaler.data import save_img_orig, save_img_resize, save_img_predict
 from upscaler.model import make_upscaler_skip_con, make_upscaler_orig, make_upscaler_unetish, make_upscaler_unetish_add, make_upscaler_attention, make_upscaler_incep_resnet
-from upscaler.model import make_discriminator_simple_512, make_discriminator_sparse_512
+from upscaler.model import make_discriminator_simple_512, make_discriminator_sparse_512, make_discriminator_thin_512
 from upscaler.model import VGG_LOSS, VGG_MSE_LOSS, VGG_MAE_LOSS, WassersteinLosses, RelativisticLosses
 from upscaler.model import make_and_compile_gan2
 from upscaler.json import PandasEncoder
@@ -54,7 +54,7 @@ if __name__== "__main__":
     
     parser.add_argument('-gm', '--generator_model', action='store', dest='generator_model', default='resnet-att', choices=['orig','skip-con','resnet-att','unetish','unetish-add', 'inc-resnet'], help='Generator model to be used')
     
-    parser.add_argument('-dm', '--discriminator_model', action='store', dest='discriminator_model', default='s512', choices=['s512', 'sp512'], help='Discriminator model to be used')
+    parser.add_argument('-dm', '--discriminator_model', action='store', dest='discriminator_model', default='s512', choices=['s512', 'sp512', 't512'], help='Discriminator model to be used')
     parser.add_argument('-da', '--discriminator_activation', action='store', dest='discriminator_activation', default='bi-log', choices=['none', 'sigmoid', 'log-sigm', 'tanh', 'bi-log'], help='Activation to use for the discriminator')
     
     parser.add_argument('-cl', '--content_loss', action='store', dest='content_loss', default='vgg-only', choices=['vgg-only','vgg-mae','vgg-mse'], help='Content loss function to be used for the training')
@@ -91,7 +91,7 @@ if __name__== "__main__":
     
     parser.add_argument('--b_block_type', action='store', dest='b_block_type', default='2path', choices=['2path','3path'])
     parser.add_argument('--b_block_num', action='store', dest='b_block_num', default='8', type=int)    
-    parser.add_argument('--b_block_kernel', action='store', dest='b_block_kernel', default='7', type=int)
+    parser.add_argument('--b_block_kernel', action='store', dest='b_block_kernel', default='5', type=int)
     
     parser.add_argument('--c_block_type', action='store', dest='c_block_type', default='2path', choices=['2path','3path'])
     parser.add_argument('--c_block_num', action='store', dest='c_block_num', default='4', type=int)
@@ -258,6 +258,10 @@ if __name__== "__main__":
         discriminator = make_discriminator_simple_512(output_image_shape, activation = values.discriminator_activation)
     elif values.discriminator_model == 'sp512':
         discriminator = make_discriminator_sparse_512(output_image_shape, activation = values.discriminator_activation)
+    elif values.discriminator_model == 't512':
+        discriminator = make_discriminator_thin_512(output_image_shape, activation = values.discriminator_activation)
+        
+        
     
     # create the content loss
     if values.content_loss == 'vgg-only':

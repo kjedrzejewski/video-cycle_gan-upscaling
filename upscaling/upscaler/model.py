@@ -228,7 +228,7 @@ class WassersteinLosses(GanLosses):
     def generator_loss(self):
         
         def loss(y_true,y_pred):
-            l = K.mean(self._fake_output) - K.mean(self._real_output)
+            l = K.mean(self._fake_output)
             
             return l
         
@@ -896,6 +896,69 @@ def make_discriminator_simple_512(input_shape, activation = 'none'):
     return model
 
 
+
+
+def make_discriminator_thin_512(input_shape, activation = 'none'):
+    input = Input(input_shape, name = 'discriminator/input')
+
+    layer = Conv2D(filters = 64, kernel_size = 3, strides = 1, padding = "same", name = 'discriminator/block_1/Conv2d')(input)
+    layer = BatchNormalization(name = 'discriminator/block_1/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_1/LeakyReLU')(layer)
+    
+    layer = Conv2D(filters = 128, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_2/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_2/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_2/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_3/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_3/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_3/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_4/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_4/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_4/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_5/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_5/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_5/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_6/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_6/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_6/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_7/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_7/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_7/LeakyReLU')(layer)
+
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_8/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_8/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_8/LeakyReLU')(layer)
+    
+    layer = Conv2D(filters = 256, kernel_size = 3, strides = 2, padding = "same", name = 'discriminator/block_9/Conv2d')(layer)
+    layer = BatchNormalization(name = 'discriminator/block_9/BatchNorm')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/block_9/LeakyReLU')(layer)
+
+    layer = Flatten(name = 'discriminator/final/Flatten')(layer)
+    layer = Dense(1024, name = 'discriminator/final/Dense_1')(layer)
+    layer = BatchNormalization(name = 'discriminator/final/BatchNorm_1')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_1')(layer)
+    
+    layer = Dense(32, name = 'discriminator/final/Dense_2')(layer)
+    layer = BatchNormalization(name = 'discriminator/final/BatchNorm_2')(layer)
+    layer = LeakyReLU(alpha = 0.1, name = 'discriminator/final/LeakyReLU_2')(layer)
+
+    layer = Dense(1, name = 'discriminator/final/Dense_3')(layer)
+    if activation == 'sigmoid':
+        layer = Activation('sigmoid', name = 'discriminator/final/sigmoid')(layer)
+    elif activation == 'log-sigm':
+        layer = Lambda(lambda x: K.log(K.sigmoid(x)), name = 'discriminator/final/log-sigmoid')(layer)
+    elif activation == 'tanh':
+        layer = Activation('tanh', name = 'discriminator/final/tanh')(layer)
+    elif activation == 'bi-log':
+        layer = Lambda(lambda x: (x / (1 + K.abs(x))) * K.log(K.abs(x) + 2), name = 'discriminator/final/bi-log')(layer)
+
+    model  = Model(inputs = input, outputs = layer)
+    
+    return model
 
 
 def make_discriminator_sparse_512(input_shape, activation = 'none'):
